@@ -1,0 +1,118 @@
+services:
+  mysql:
+    image: mysql:8.0.45
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: patent_quality
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - patent-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 10s
+      retries: 5
+
+  redis:
+    image: redis:latest
+    networks:
+      - patent-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      timeout: 10s
+      retries: 5
+
+  dedoc:
+    image: dedocproject/dedoc
+    networks:
+      - patent-network
+    volumes:
+      - dedoc-temp:/tmp
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:1231/"]
+      timeout: 10s
+      retries: 5
+
+  backend:
+    build:
+      context: .  # 核心修改：构建上下文改为项目根目录
+      dockerfile: ./backend/Dockerfile  # 核心修改：指定 backend 下的 Dockerfile 路径
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_HOST=mysql
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_URL=redis://redis:6379/0
+      - KIMI_API_KEY=${KIMI_API_KEY}
+      - RULE_ENCRYPT_KEY=${RULE_ENCRYPT_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - UPLOAD_FOLDER=/app/uploads
+      - RULES_FOLDER=/app/rules
+      - REPORTS_FOLDER=/app/reports
+    volumes:
+      - ./uploads:/app/uploads
+      - ./reports:/app/reports
+      - ./rules:/app/rules
+      - ./frontend:/app/frontend  # 开发环境挂载卷
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      dedoc:
+        condition: service_healthy
+    networks:
+      - patent-network
+
+  celery_worker:
+    build: # celery_worker 也要同步修改，因为和 backend 共用 Dockerfile
+      context: .
+      dockerfile: ./backend/Dockerfile
+    command: celery -A app.tasks.celery worker --loglevel=info
+    environment:
+      - DB_HOST=mysql
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_URL=redis://redis:6379/0
+      - KIMI_API_KEY=${KIMI_API_KEY}
+      - RULE_ENCRYPT_KEY=${RULE_ENCRYPT_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - UPLOAD_FOLDER=/app/uploads
+      - RULES_FOLDER=/app/rules
+      - REPORTS_FOLDER=/app/reports
+    volumes:
+      - ./uploads:/app/uploads
+      - ./reports:/app/reports
+      - ./rules:/app/rules
+      # 关键修正：路径从 /frontend 改为 /app/frontend（和 backend 统一）
+      - ./frontend:/app/frontend
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      dedoc:
+        condition: service_healthy
+    networks:
+      - patent-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8888:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - backend
+    networks:
+      - patent-network
+
+volumes:
+  mysql-data:
+  dedoc-temp:
+
+networks:
+  patent-network:
+    driver: bridge

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>质检详情 - {{ doc.filename }}</h2>
+<p>上传时间: {{ doc.upload_time }}</p>
+
+<h3>质检结果版本</h3>
+<ul>
+    {% for res in results %}
+    <li>
+        版本 {{ res.version }} - {{ res.check_time }}
+        <a href="{{ url_for('main.download_report', result_id=res.id) }}">下载报告</a>
+        {% if not loop.last %}
+        <a href="{{ url_for('main.compare', doc_id=doc.id) }}?v1={{ res.id }}&v2={{ results[loop.index0+1].id }}">与下一版本对比</a>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+
+<h3>最新质检结果摘要</h3>
+<pre>{{ results[0].result_json if results else '无结果' }}</pre>
+{% endblock %}

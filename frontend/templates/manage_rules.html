@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>规则管理</h2>
+
+<h3>上传新规则</h3>
+<form method="post" enctype="multipart/form-data">
+    <div>
+        <label>规则文件 (.xlsx):</label>
+        <input type="file" name="rule_file" accept=".xlsx" required>
+    </div>
+    <div>
+        <label>版本描述:</label>
+        <input type="text" name="description">
+    </div>
+    <button type="submit">上传并激活</button>
+</form>
+
+<h3>历史版本</h3>
+<table>
+    <thead>
+        <tr>
+            <th>版本</th>
+            <th>描述</th>
+            <th>创建时间</th>
+            <th>创建人</th>
+            <th>激活状态</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for v in versions %}
+        <tr>
+            <td>{{ v.version }}</td>
+            <td>{{ v.description }}</td>
+            <td>{{ v.created_at }}</td>
+            <td>{{ v.creator.username }}</td>
+            <td>{{ '是' if v.is_active else '否' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

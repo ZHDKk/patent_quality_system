@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>我的质检结果</h2>
+<table>
+    <thead>
+        <tr>
+            <th>文件名</th>
+            <th>上传时间</th>
+            <th>状态</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for doc in docs %}
+        <tr>
+            <td>{{ doc.filename }}</td>
+            <td>{{ doc.upload_time }}</td>
+            <td>{{ doc.status }}</td>
+            <td>
+                {% if doc.status == 'completed' %}
+                    <a href="{{ url_for('main.view_result', doc_id=doc.id) }}">查看详情</a>
+                    <a href="{{ url_for('main.compare', doc_id=doc.id) }}">版本对比</a>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

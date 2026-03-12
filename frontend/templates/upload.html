@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>上传专利文件</h2>
+
+<!-- 单个文件上传 -->
+<form id="uploadForm" enctype="multipart/form-data">
+    <div class="form-group">
+        <label>选择文件：</label>
+        <input type="file" name="file" accept=".doc,.docx,.pdf" required>
+    </div>
+    <div class="form-group">
+        <label>是否为二次质检？</label>
+        <div>
+            <label><input type="radio" name="is_recheck" value="no" checked> 首次提交</label>
+            <label><input type="radio" name="is_recheck" value="yes"> 基于上次结果修改</label>
+        </div>
+    </div>
+    <div id="recheckOptions" style="display:none;">
+        <label>选择上次质检结果：</label>
+        <select name="parent_result_id">
+            {% for doc in recent_docs %}
+                {% if doc.results %}
+                    <optgroup label="{{ doc.filename }}">
+                    {% for res in doc.results %}
+                        <option value="{{ res.id }}">版本{{ res.version }} ({{ res.check_time }})</option>
+                    {% endfor %}
+                    </optgroup>
+                {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">开始质检</button>
+</form>
+
+<!-- 批量上传 -->
+<h3>批量上传</h3>
+<form id="batchUploadForm" enctype="multipart/form-data">
+    <div class="form-group">
+        <label>选择多个文件：</label>
+        <input type="file" name="files" multiple accept=".doc,.docx,.pdf" required>
+    </div>
+    <button type="submit" class="btn btn-secondary">批量上传并质检</button>
+</form>
+
+<script>
+document.querySelectorAll('input[name="is_recheck"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        document.getElementById('recheckOptions').style.display = this.value === 'yes' ? 'block' : 'none';
+    });
+});
+
+document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const response = await fetch('/upload', { method: 'POST', body: formData });
+    const result = await response.json();
+    if (result.error) {
+        alert('错误：' + result.error);
+    } else {
+        alert('上传成功，任务ID：' + result.doc_id);
+        window.location.href = '/results';
+    }
+});
+
+document.getElementById('batchUploadForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const response = await fetch('/batch_upload', { method: 'POST', body: formData });
+    const result = await response.json();
+    if (result.error) {
+        alert('错误：' + result.error);
+    } else {
+        alert(`成功提交 ${result.count} 个文件`);
+        window.location.href = '/results';
+    }
+});
+</script>
+{% endblock %}

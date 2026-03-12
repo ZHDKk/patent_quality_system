@@ -1,0 +1,173 @@
+import os
+import json
+from flask import Blueprint, request, jsonify, render_template, current_app, flash, redirect, url_for
+from flask_login import login_required, current_user
+from werkzeug.utils import secure_filename
+from datetime import datetime
+from .models import db, PatentDocument, QualityCheckResult, OperationLog, RuleVersion, User
+from .tasks import process_patent_document
+from .rule_engine import RuleEngine
+from .decorators import admin_required
+from .utils import log_operation
+from deepdiff import DeepDiff
+
+main_bp = Blueprint('main', __name__)
+
+ALLOWED_EXTENSIONS = {'doc', 'docx', 'pdf'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@main_bp.route('/')
+@login_required
+def index():
+    return redirect(url_for('main.upload'))
+
+@main_bp.route('/upload', methods=['GET', 'POST'])
+@login_required
+@log_operation('upload')
+def upload():
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file part'}), 400
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
+
+            doc = PatentDocument(
+                filename=filename,
+                original_path=file_path,
+                uploader_id=current_user.id
+            )
+            db.session.add(doc)
+            db.session.commit()
+
+            is_recheck = request.form.get('is_recheck') == 'yes'
+            parent_id = request.form.get('parent_result_id')
+            # 触发异步任务
+            process_patent_document.delay(doc.id, is_recheck, parent_id)
+
+            return jsonify({'status': 'success', 'doc_id': doc.id})
+        else:
+            return jsonify({'error': 'File type not allowed'}), 400
+
+    recent_docs = PatentDocument.query.filter_by(uploader_id=current_user.id).order_by(PatentDocument.upload_time.desc()).limit(10).all()
+    return render_template('upload.html', recent_docs=recent_docs)
+
+@main_bp.route('/batch_upload', methods=['POST'])
+@login_required
+@log_operation('batch_upload')
+def batch_upload():
+    files = request.files.getlist('files')
+    if not files:
+        return jsonify({'error': 'No files'}), 400
+
+    doc_ids = []
+    for file in files:
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
+
+            doc = PatentDocument(
+                filename=filename,
+                original_path=file_path,
+                uploader_id=current_user.id
+            )
+            db.session.add(doc)
+            db.session.flush()
+            doc_ids.append(doc.id)
+    db.session.commit()
+
+    for doc_id in doc_ids:
+        process_patent_document.delay(doc_id)
+
+    return jsonify({'status': 'success', 'doc_ids': doc_ids, 'count': len(doc_ids)})
+
+@main_bp.route('/results')
+@login_required
+def results():
+    docs = PatentDocument.query.filter_by(uploader_id=current_user.id).order_by(PatentDocument.upload_time.desc()).all()
+    return render_template('results.html', docs=docs)
+
+@main_bp.route('/result/<int:doc_id>')
+@login_required
+def view_result(doc_id):
+    doc = PatentDocument.query.get_or_404(doc_id)
+    if doc.uploader_id != current_user.id and current_user.role != 'admin':
+        flash('Access denied')
+        return redirect(url_for('main.results'))
+    results = QualityCheckResult.query.filter_by(document_id=doc_id).order_by(QualityCheckResult.version).all()
+    return render_template('result_detail.html', doc=doc, results=results)
+
+@main_bp.route('/compare')
+@login_required
+def compare():
+    doc_id = request.args.get('doc_id')
+    if not doc_id:
+        flash('Missing document ID')
+        return redirect(url_for('main.results'))
+    doc = PatentDocument.query.get_or_404(doc_id)
+    if doc.uploader_id != current_user.id and current_user.role != 'admin':
+        flash('Access denied')
+        return redirect(url_for('main.results'))
+    versions = QualityCheckResult.query.filter_by(document_id=doc_id).order_by(QualityCheckResult.version).all()
+    return render_template('compare.html', doc=doc, versions=versions)
+
+@main_bp.route('/api/compare/<int:version1>/<int:version2>')
+@login_required
+def api_compare(version1, version2):
+    v1 = QualityCheckResult.query.get_or_404(version1)
+    v2 = QualityCheckResult.query.get_or_404(version2)
+    # 权限检查
+    if v1.document.uploader_id != current_user.id and current_user.role != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+    if v2.document.uploader_id != current_user.id and current_user.role != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+
+    data1 = json.loads(v1.result_json)
+    data2 = json.loads(v2.result_json)
+    diff = DeepDiff(data1, data2, ignore_order=True)
+    return jsonify(diff.to_dict())
+
+@main_bp.route('/admin/rules', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_rules():
+    if request.method == 'POST':
+        if 'rule_file' not in request.files:
+            flash('No file')
+            return redirect(request.url)
+        file = request.files['rule_file']
+        if file.filename == '':
+            flash('No file selected')
+            return redirect(request.url)
+        if file and file.filename.endswith('.xlsx'):
+            filename = secure_filename(file.filename)
+            temp_path = os.path.join('/tmp', filename)
+            file.save(temp_path)
+
+            description = request.form.get('description', '')
+            engine = RuleEngine()
+            try:
+                engine.update_rules(temp_path, description, current_user.id)
+                flash('规则已更新')
+            except Exception as e:
+                flash(f'更新失败: {str(e)}')
+            return redirect(url_for('main.manage_rules'))
+        else:
+            flash('请上传 .xlsx 文件')
+
+    versions = RuleVersion.query.order_by(RuleVersion.created_at.desc()).all()
+    return render_template('manage_rules.html', versions=versions)
+
+@main_bp.route('/admin/users')
+@login_required
+@admin_required
+def manage_users():
+    users = User.query.all()
+    return render_template('manage_users.html', users=users)

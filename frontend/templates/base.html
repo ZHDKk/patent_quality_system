@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>专利质检系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav>
+        <div class="nav-wrapper">
+            <a href="{{ url_for('main.index') }}" class="brand-logo">专利质检系统</a>
+            <ul class="right">
+                {% if current_user.is_authenticated %}
+                    <li><a href="{{ url_for('main.upload') }}">上传</a></li>
+                    <li><a href="{{ url_for('main.results') }}">我的结果</a></li>
+                    {% if current_user.role == 'admin' %}
+                        <li><a href="{{ url_for('main.manage_rules') }}">规则管理</a></li>
+                        <li><a href="{{ url_for('main.manage_users') }}">用户管理</a></li>
+                    {% endif %}
+                    <li><a href="{{ url_for('auth.logout') }}">注销({{ current_user.username }})</a></li>
+                {% else %}
+                    <li><a href="{{ url_for('auth.login') }}">登录</a></li>
+                {% endif %}
+            </ul>
+        </div>
+    </nav>
+    <main>
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <ul class="flashes">
+                    {% for message in messages %}
+                        <li>{{ message }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </main>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

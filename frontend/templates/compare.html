@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>质检结果对比 - {{ doc.filename }}</h2>
+
+<div>
+    <label>版本 A:</label>
+    <select id="version1">
+        {% for v in versions %}
+        <option value="{{ v.id }}">版本{{ v.version }} ({{ v.check_time }})</option>
+        {% endfor %}
+    </select>
+</div>
+<div>
+    <label>版本 B:</label>
+    <select id="version2">
+        {% for v in versions %}
+        <option value="{{ v.id }}">版本{{ v.version }} ({{ v.check_time }})</option>
+        {% endfor %}
+    </select>
+</div>
+<button id="compareBtn">对比</button>
+
+<div id="diffResult" style="margin-top:20px; border:1px solid #ccc; padding:10px;"></div>
+
+<script>
+document.getElementById('compareBtn').addEventListener('click', async () => {
+    const v1 = document.getElementById('version1').value;
+    const v2 = document.getElementById('version2').value;
+    if (!v1 || !v2) return;
+    const response = await fetch(`/api/compare/${v1}/${v2}`);
+    const diff = await response.json();
+    document.getElementById('diffResult').innerHTML = '<pre>' + JSON.stringify(diff, null, 2) + '</pre>';
+});
+</script>
+{% endblock %}

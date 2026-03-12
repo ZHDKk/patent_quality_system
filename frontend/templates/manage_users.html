@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>用户管理</h2>
+<a href="{{ url_for('auth.register') }}">创建新用户</a>
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>用户名</th>
+            <th>角色</th>
+            <th>创建时间</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for user in users %}
+        <tr>
+            <td>{{ user.id }}</td>
+            <td>{{ user.username }}</td>
+            <td>{{ user.role }}</td>
+            <td>{{ user.created_at }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
