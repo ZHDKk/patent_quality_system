@@ -5,12 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>专利质检系统</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- 引入现代字体（增强科技感） -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <nav>
         <div class="nav-wrapper">
             <a href="{{ url_for('main.index') }}" class="brand-logo">专利质检系统</a>
-            <ul class="right">
+            <ul>
                 {% if current_user.is_authenticated %}
                     <li><a href="{{ url_for('main.upload') }}">上传</a></li>
                     <li><a href="{{ url_for('main.results') }}">我的结果</a></li>

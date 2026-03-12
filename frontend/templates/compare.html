@@ -2,25 +2,25 @@
 {% block content %}
 <h2>质检结果对比 - {{ doc.filename }}</h2>
 
-<div>
+<div class="form-group">
     <label>版本 A:</label>
-    <select id="version1">
+    <select id="version1" class="form-control">
         {% for v in versions %}
         <option value="{{ v.id }}">版本{{ v.version }} ({{ v.check_time }})</option>
         {% endfor %}
     </select>
 </div>
-<div>
+<div class="form-group">
     <label>版本 B:</label>
-    <select id="version2">
+    <select id="version2" class="form-control">
         {% for v in versions %}
         <option value="{{ v.id }}">版本{{ v.version }} ({{ v.check_time }})</option>
         {% endfor %}
     </select>
 </div>
-<button id="compareBtn">对比</button>
+<button id="compareBtn" class="btn btn-primary">对比</button>
 
-<div id="diffResult" style="margin-top:20px; border:1px solid #ccc; padding:10px;"></div>
+<div id="diffResult" style="margin-top:20px; padding:10px;"></div>
 
 <script>
 document.getElementById('compareBtn').addEventListener('click', async () => {

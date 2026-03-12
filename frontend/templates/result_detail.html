@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>质检详情 - {{ doc.filename }}</h2>
-<p>上传时间: {{ doc.upload_time }}</p>
+<p style="color: var(--text-secondary); margin-bottom: 1.5rem;">上传时间: {{ doc.upload_time }}</p>
 
 <h3>质检结果版本</h3>
-<ul>
+<ul style="list-style: none; padding: 0; margin-bottom: 2rem;">
     {% for res in results %}
-    <li>
-        版本 {{ res.version }} - {{ res.check_time }}
-        <a href="{{ url_for('main.download_report', result_id=res.id) }}">下载报告</a>
+    <li style="padding: 1rem; border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 1rem; background: rgba(15,23,42,0.5);">
+        <span style="font-weight: 500;">版本 {{ res.version }}</span> - {{ res.check_time }}
+        <a href="{{ url_for('main.download_report', result_id=res.id) }}" class="btn btn-secondary" style="margin-left: 1rem;">下载报告</a>
         {% if not loop.last %}
-        <a href="{{ url_for('main.compare', doc_id=doc.id) }}?v1={{ res.id }}&v2={{ results[loop.index0+1].id }}">与下一版本对比</a>
+        <a href="{{ url_for('main.compare', doc_id=doc.id) }}?v1={{ res.id }}&v2={{ results[loop.index0+1].id }}" class="btn btn-primary" style="margin-left: 0.5rem;">与下一版本对比</a>
         {% endif %}
     </li>
     {% endfor %}

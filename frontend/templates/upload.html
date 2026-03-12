@@ -10,14 +10,14 @@
     </div>
     <div class="form-group">
         <label>是否为二次质检？</label>
-        <div>
+        <div style="display: flex; gap: 1.5rem; margin-top: 0.5rem;">
             <label><input type="radio" name="is_recheck" value="no" checked> 首次提交</label>
             <label><input type="radio" name="is_recheck" value="yes"> 基于上次结果修改</label>
         </div>
     </div>
     <div id="recheckOptions" style="display:none;">
         <label>选择上次质检结果：</label>
-        <select name="parent_result_id">
+        <select name="parent_result_id" class="form-control">
             {% for doc in recent_docs %}
                 {% if doc.results %}
                     <optgroup label="{{ doc.filename }}">
