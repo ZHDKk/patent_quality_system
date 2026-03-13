@@ -31,7 +31,10 @@ class KimiAIService:
             messages=messages,
             temperature=0.1
         )
-        return completion.choices[0].message.content
+        results_str = completion.choices[0].message.content
+        # 去除开头的```json和换行符
+        json_content = results_str.strip().replace("```json", "").replace("```", "").strip()
+        return json_content
 
     def call_with_files(self, rule_file_path, patent_file_path, model="kimi-k2-turbo-preview"):
         """
@@ -61,4 +64,4 @@ class KimiAIService:
             temperature=0.1
         )
         result = completion.choices[0].message.content
-        return {"result": result, "doc_content": doc_content}
+        return {"result": result.strip().replace("```json", "").replace("```", "").strip(), "doc_content": doc_content}

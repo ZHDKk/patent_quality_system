@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 安装系统依赖
+# 安装系统依赖（添加 LibreOffice）
 RUN apt-get update && apt-get install -y \
     poppler-utils \
     tesseract-ocr \

@@ -28,6 +28,8 @@
 10、 停止并移除旧容器，避免冲突：docker-compose down
 11、会强制重新构建镜像，应用新的基础镜像：docker-compose up -d --build
     重启某个容器指令：docker-compose restart celery_worker
+    docker-compose restart backend celery_worker
+    查看日志：docker-compose logs celery_worker --tail=200
 12、所有状态ok：
 (.venv) PS D:\pro\pro\other_pro\python\patent_quality_system> docker-compose up -d
 [+] up 7/7

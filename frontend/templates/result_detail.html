@@ -1,13 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>质检详情</h2>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <h2 style="margin: 0;">质检详情</h2>
+    <a href="{{ url_for('main.results') }}" class="btn btn-primary">← 返回结果列表</a>
+</div>
+
 <div style="margin-bottom: 1.5rem;">
     <h3 style="margin-bottom: 0.5rem;">{{ doc.filename }}</h3>
     <p style="color: var(--text-secondary);" id="upload-time" data-upload="{{ doc.upload_time.isoformat() }}">上传时间: 加载中...</p>
 </div>
 
 <!-- 问题表格容器 -->
-<div id="issues-table-container"></div>
+<div id="issues-table-container">
+    <p>加载中...</p>
+</div>
 
 <!-- 分页控件 -->
 <div id="pagination" class="pagination"></div>
@@ -35,7 +41,7 @@
 .issues-table td {
     word-break: break-word;
 }
-/* 分页样式（复用results页面的分页样式） */
+/* 分页样式 */
 .pagination {
     margin-top: 2rem;
     display: flex;
@@ -63,42 +69,35 @@
     padding: 0.5rem 0.8rem;
     color: var(--text-secondary);
 }
-/* 返回按钮 */
-.back-btn {
-    display: inline-block;
-    margin-bottom: 1rem;
-    padding: 0.5rem 1rem;
-    background: var(--gradient);
+/* 原始输出样式 */
+.raw-output {
+    background: rgba(0,0,0,0.3);
+    padding: 1rem;
     border-radius: 4px;
-    color: white;
-    text-decoration: none;
+    font-family: monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 </style>
 
-<a href="{{ url_for('main.results') }}" class="back-btn">← 返回结果列表</a>
-
 <script>
-// 将从后端传递的 results 转换为 JavaScript 对象
+// 从后端接收的数据（已由视图函数处理为可序列化格式）
 const results = {{ results|tojson }};
-const docUploadTime = document.getElementById('upload-time').dataset.upload;
+const docUploadTime = "{{ doc.upload_time.isoformat() }}";
 
 // 格式化上传时间
-const uploadDate = new Date(docUploadTime);
-document.getElementById('upload-time').textContent = `上传时间: ${uploadDate.toLocaleString()}`;
+document.getElementById('upload-time').textContent = `上传时间: ${new Date(docUploadTime).toLocaleString()}`;
 
 // 收集所有问题
 let allIssues = [];
+
 if (results && results.length > 0) {
     results.forEach(res => {
         const version = res.version;
         const checkTime = new Date(res.check_time).toLocaleString();
-        let resultJson = {};
-        try {
-            resultJson = JSON.parse(res.result_json);
-        } catch (e) {
-            resultJson = { raw_output: res.result_json };
-        }
+        const resultJson = res.result_json;  // 此时 result_json 已经是对象（字典）
 
+        // 检查是否有 issues 数组
         if (resultJson.issues && Array.isArray(resultJson.issues) && resultJson.issues.length > 0) {
             resultJson.issues.forEach(issue => {
                 allIssues.push({
@@ -110,15 +109,28 @@ if (results && results.length > 0) {
                     severity: issue.severity || '提示'
                 });
             });
-        } else if (resultJson.raw_output) {
-            // 有原始输出但没有结构化问题，将原始输出作为一条特殊记录
+        }
+        // 如果有原始输出且无 issues，则单独添加一条记录
+        else if (resultJson.raw_output) {
             allIssues.push({
                 version: version,
+                check_time: checkTime,
                 rule_id: '原始输出',
                 issue: '',
                 suggestion: '',
                 severity: '信息',
                 raw: resultJson.raw_output
+            });
+        }
+        // 如果既无 issues 也无 raw_output，可添加一条占位记录（可选）
+        else {
+            allIssues.push({
+                version: version,
+                check_time: checkTime,
+                rule_id: '无数据',
+                issue: '该版本质检结果无结构化数据',
+                suggestion: '',
+                severity: '提示'
             });
         }
     });
@@ -128,33 +140,48 @@ if (results && results.length > 0) {
 const itemsPerPage = 10;
 let currentPage = 1;
 
+// 简单的HTML转义函数
+function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
 function renderTable(page) {
     const start = (page - 1) * itemsPerPage;
     const end = start + itemsPerPage;
     const pageIssues = allIssues.slice(start, end);
 
-    let html = '';
+    const container = document.getElementById('issues-table-container');
     if (allIssues.length === 0) {
-        html = '<p>暂无质检结果</p>';
-    } else {
-        html = '<table class="issues-table"><thead><tr><th>版本</th><th>规则ID</th><th>问题描述</th><th>建议</th><th>严重程度</th></tr></thead><tbody>';
-        pageIssues.forEach(issue => {
-            if (issue.rule_id === '原始输出') {
-                // 原始输出合并所有列
-                html += `<tr><td colspan="5"><pre>${issue.raw}</pre></td></tr>`;
-            } else {
-                html += `<tr>
-                    <td>${issue.version}</td>
-                    <td>${issue.rule_id}</td>
-                    <td>${issue.issue}</td>
-                    <td>${issue.suggestion}</td>
-                    <td>${issue.severity}</td>
-                </tr>`;
-            }
-        });
-        html += '</tbody></table>';
+        container.innerHTML = '<p>暂无质检结果</p>';
+        document.getElementById('pagination').innerHTML = '';
+        return;
     }
-    document.getElementById('issues-table-container').innerHTML = html;
+
+    let tableHtml = '<table class="issues-table"><thead><tr><th>版本</th><th>规则ID</th><th>问题描述</th><th>建议</th><th>严重程度</th></tr></thead><tbody>';
+
+    pageIssues.forEach(issue => {
+        if (issue.rule_id === '原始输出') {
+            // 原始输出合并所有列
+            tableHtml += `<tr><td colspan="5"><div class="raw-output">${escapeHtml(issue.raw)}</div></td></tr>`;
+        } else {
+            tableHtml += `<tr>
+                <td>${escapeHtml(issue.version)}</td>
+                <td>${escapeHtml(issue.rule_id)}</td>
+                <td>${escapeHtml(issue.issue)}</td>
+                <td>${escapeHtml(issue.suggestion)}</td>
+                <td>${escapeHtml(issue.severity)}</td>
+            </tr>`;
+        }
+    });
+
+    tableHtml += '</tbody></table>';
+    container.innerHTML = tableHtml;
     renderPagination();
 }
 
@@ -181,7 +208,6 @@ function renderPagination() {
     }
     paginationDiv.innerHTML = html;
 
-    // 为所有分页链接绑定事件
     paginationDiv.querySelectorAll('a').forEach(link => {
         link.addEventListener('click', (e) => {
             e.preventDefault();

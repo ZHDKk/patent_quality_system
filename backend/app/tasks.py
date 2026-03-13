@@ -56,7 +56,7 @@ def process_patent_document(self, doc_id, is_recheck=False, parent_result_id=Non
 
                 system_prompt = rule_engine.get_system_prompt()
                 ai_result_text = ai.call_with_text(system_prompt, doc_text, model=model)
-                print(f"返回的ai_result_text：{ai_result_text}")
+                # print(f"返回的ai_result_text：{ai_result_text}")
                 # 解析 AI 返回结果，并构造 ai_result
                 try:
                     issues = json.loads(ai_result_text)
@@ -67,7 +67,7 @@ def process_patent_document(self, doc_id, is_recheck=False, parent_result_id=Non
                     # 如果解析失败，将原始输出放入 raw_output，issues 为空
                     ai_result = {'issues': [], 'raw_output': ai_result_text}
 
-                print(f"处理后的ai_result：{ai_result}")
+                # print(f"处理后的ai_result：{ai_result}")
                 report_text = doc_text
 
             else:  # parse_mode == 'online'

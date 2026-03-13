@@ -121,8 +121,23 @@ def view_result(doc_id):
     if doc.uploader_id != current_user.id and current_user.role != 'admin':
         flash('Access denied')
         return redirect(url_for('main.results'))
-    results = QualityCheckResult.query.filter_by(document_id=doc_id).order_by(QualityCheckResult.version).all()
-    return render_template('result_detail.html', doc=doc, results=results)
+
+    results_objs = QualityCheckResult.query.filter_by(document_id=doc_id).order_by(QualityCheckResult.version).all()
+    results_data = []
+    for res in results_objs:
+        # 关键：将 result_json 字符串解析为字典
+        try:
+            result_content = json.loads(res.result_json) if res.result_json else {}
+        except:
+            result_content = {"raw_output": res.result_json}
+
+        results_data.append({
+            'id': res.id,
+            'version': res.version,
+            'check_time': res.check_time.isoformat(),
+            'result_json': result_content,  # 现在是字典
+        })
+    return render_template('result_detail.html', doc=doc, results=results_data)
 
 @main_bp.route('/compare')
 @login_required
@@ -264,3 +279,16 @@ def batch_delete_documents():
                 current_app.logger.error(f"Error deleting doc {doc_id}: {e}")
     db.session.commit()
     return jsonify({'status': 'success', 'deleted_count': deleted_count})
+
+@main_bp.route('/api/documents/status', methods=['POST'])
+@login_required
+def documents_status():
+    data = request.get_json()
+    doc_ids = data.get('doc_ids', [])
+    if not doc_ids:
+        return jsonify({})
+    docs = PatentDocument.query.filter(
+        PatentDocument.id.in_(doc_ids),
+        PatentDocument.uploader_id == current_user.id
+    ).all()
+    return jsonify({doc.id: doc.status for doc in docs})
