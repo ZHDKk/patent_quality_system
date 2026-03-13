@@ -31,7 +31,7 @@ class PatentDocument(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255))
     original_path = db.Column(db.String(500))
-    parsed_json = db.Column(db.Text)      # 解析后的结构化内容（JSON）
+    parsed_json = db.Column(db.Text().with_variant(db.Text(length=2**32-1), 'mysql'), nullable=True)      # 解析后的结构化内容（JSON）
     uploader_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     upload_time = db.Column(db.DateTime, default=datetime.utcnow)
     status = db.Column(db.String(20), default='pending')  # pending, processing, completed, failed

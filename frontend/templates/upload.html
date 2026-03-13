@@ -4,6 +4,23 @@
 
 <!-- 单个文件上传 -->
 <form id="uploadForm" enctype="multipart/form-data">
+    <!-- 解析方式选择 -->
+    <div class="form-group">
+        <label>解析方式：</label>
+        <div style="display: flex; gap: 1.5rem; margin-top: 0.5rem;">
+            <label><input type="radio" name="parse_mode" value="local" checked> 本地解析（Docling）</label>
+            <label><input type="radio" name="parse_mode" value="online"> 在线解析（Kimi文件接口）</label>
+        </div>
+    </div>
+
+    <!-- 模型选择 -->
+    <div class="form-group">
+        <label>选择模型：</label>
+        <select name="model" class="form-control">
+            <option value="kimi-k2-turbo-preview" selected>Kimi (k2-turbo-preview)</option>
+            <option value="moonshot-v1-8k" disabled>Moonshot v1 8K (即将支持)</option>
+        </select>
+    </div>
     <div class="form-group">
         <label>选择文件：</label>
         <input type="file" name="file" accept=".doc,.docx,.pdf" required>
@@ -19,13 +36,13 @@
         <label>选择上次质检结果：</label>
         <select name="parent_result_id" class="form-control">
             {% for doc in recent_docs %}
-                {% if doc.results %}
-                    <optgroup label="{{ doc.filename }}">
-                    {% for res in doc.results %}
-                        <option value="{{ res.id }}">版本{{ res.version }} ({{ res.check_time }})</option>
-                    {% endfor %}
-                    </optgroup>
-                {% endif %}
+            {% if doc.results %}
+            <optgroup label="{{ doc.filename }}">
+                {% for res in doc.results %}
+                <option value="{{ res.id }}">版本{{ res.version }} ({{ res.check_time }})</option>
+                {% endfor %}
+            </optgroup>
+            {% endif %}
             {% endfor %}
         </select>
     </div>
@@ -43,36 +60,36 @@
 </form>
 
 <script>
-document.querySelectorAll('input[name="is_recheck"]').forEach(radio => {
-    radio.addEventListener('change', function() {
-        document.getElementById('recheckOptions').style.display = this.value === 'yes' ? 'block' : 'none';
+    document.querySelectorAll('input[name="is_recheck"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            document.getElementById('recheckOptions').style.display = this.value === 'yes' ? 'block' : 'none';
+        });
     });
-});
 
-document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    const response = await fetch('/upload', { method: 'POST', body: formData });
-    const result = await response.json();
-    if (result.error) {
-        alert('错误：' + result.error);
-    } else {
-        alert('上传成功，任务ID：' + result.doc_id);
-        window.location.href = '/results';
-    }
-});
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const response = await fetch('/upload', { method: 'POST', body: formData });
+        const result = await response.json();
+        if (result.error) {
+            alert('错误：' + result.error);
+        } else {
+            alert('上传成功，任务ID：' + result.doc_id);
+            window.location.href = '/results';
+        }
+    });
 
-document.getElementById('batchUploadForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    const response = await fetch('/batch_upload', { method: 'POST', body: formData });
-    const result = await response.json();
-    if (result.error) {
-        alert('错误：' + result.error);
-    } else {
-        alert(`成功提交 ${result.count} 个文件`);
-        window.location.href = '/results';
-    }
-});
+    document.getElementById('batchUploadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const response = await fetch('/batch_upload', { method: 'POST', body: formData });
+        const result = await response.json();
+        if (result.error) {
+            alert('错误：' + result.error);
+        } else {
+            alert(`成功提交 ${result.count} 个文件`);
+            window.location.href = '/results';
+        }
+    });
 </script>
 {% endblock %}

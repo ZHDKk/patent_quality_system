@@ -1,5 +1,7 @@
 import os
 import json
+import uuid
+
 from flask import Blueprint, request, jsonify, render_template, current_app, flash, redirect, url_for
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
@@ -34,12 +36,17 @@ def upload():
         if file.filename == '':
             return jsonify({'error': 'No selected file'}), 400
         if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+            original_filename = file.filename
+            # 生成安全的存储文件名
+            safe_filename = secure_filename(original_filename)
+            if not safe_filename:
+                ext = os.path.splitext(original_filename)[1]
+                safe_filename = str(uuid.uuid4()) + ext
+            file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], safe_filename)
             file.save(file_path)
 
             doc = PatentDocument(
-                filename=filename,
+                filename=original_filename,  # 保存原始文件名用于显示
                 original_path=file_path,
                 uploader_id=current_user.id
             )
@@ -48,8 +55,10 @@ def upload():
 
             is_recheck = request.form.get('is_recheck') == 'yes'
             parent_id = request.form.get('parent_result_id')
-            # 触发异步任务
-            process_patent_document.delay(doc.id, is_recheck, parent_id)
+            parse_mode = request.form.get('parse_mode', 'local')
+            model = request.form.get('model', 'kimi-k2-turbo-preview')
+
+            process_patent_document.delay(doc.id, is_recheck, parent_id, parse_mode, model)
 
             return jsonify({'status': 'success', 'doc_id': doc.id})
         else:
@@ -66,15 +75,22 @@ def batch_upload():
     if not files:
         return jsonify({'error': 'No files'}), 400
 
+    parse_mode = request.form.get('parse_mode', 'local')
+    model = request.form.get('model', 'kimi-k2-turbo-preview')
+
     doc_ids = []
     for file in files:
         if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+            original_filename = file.filename
+            safe_filename = secure_filename(original_filename)
+            if not safe_filename:
+                ext = os.path.splitext(original_filename)[1]
+                safe_filename = str(uuid.uuid4()) + ext
+            file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], safe_filename)
             file.save(file_path)
 
             doc = PatentDocument(
-                filename=filename,
+                filename=original_filename,
                 original_path=file_path,
                 uploader_id=current_user.id
             )
@@ -84,15 +100,19 @@ def batch_upload():
     db.session.commit()
 
     for doc_id in doc_ids:
-        process_patent_document.delay(doc_id)
+        process_patent_document.delay(doc_id, parse_mode=parse_mode, model=model)
 
     return jsonify({'status': 'success', 'doc_ids': doc_ids, 'count': len(doc_ids)})
 
 @main_bp.route('/results')
 @login_required
 def results():
-    docs = PatentDocument.query.filter_by(uploader_id=current_user.id).order_by(PatentDocument.upload_time.desc()).all()
-    return render_template('results.html', docs=docs)
+    page = request.args.get('page', 1, type=int)
+    per_page = 30
+    query = PatentDocument.query.filter_by(uploader_id=current_user.id).order_by(PatentDocument.upload_time.desc())
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    docs = pagination.items
+    return render_template('results.html', docs=docs, pagination=pagination)
 
 @main_bp.route('/result/<int:doc_id>')
 @login_required
@@ -171,3 +191,76 @@ def manage_rules():
 def manage_users():
     users = User.query.all()
     return render_template('manage_users.html', users=users)
+
+@main_bp.route('/api/document/<int:doc_id>/details')
+@login_required
+def document_details(doc_id):
+    doc = PatentDocument.query.get_or_404(doc_id)
+    if doc.uploader_id != current_user.id and current_user.role != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+    results = QualityCheckResult.query.filter_by(document_id=doc_id).order_by(QualityCheckResult.version.desc()).all()
+    results_data = []
+    for res in results:
+        try:
+            result_content = json.loads(res.result_json)
+        except:
+            result_content = {"raw_output": res.result_json, "issues": []}
+        results_data.append({
+            'id': res.id,
+            'version': res.version,
+            'check_time': res.check_time.isoformat(),
+            'result': result_content
+        })
+    return jsonify({
+        'id': doc.id,
+        'filename': doc.filename,
+        'status': doc.status,
+        'upload_time': doc.upload_time.isoformat(),
+        'results': results_data
+    })
+
+@main_bp.route('/api/document/<int:doc_id>', methods=['DELETE'])
+@login_required
+@admin_required
+def delete_document(doc_id):
+    doc = PatentDocument.query.get_or_404(doc_id)
+    try:
+        if os.path.exists(doc.original_path):
+            os.remove(doc.original_path)
+        for result in doc.results:
+            if result.report_path and os.path.exists(result.report_path):
+                os.remove(result.report_path)
+    except Exception as e:
+        current_app.logger.error(f"Error deleting files for doc {doc_id}: {e}")
+    db.session.delete(doc)
+    db.session.commit()
+    return jsonify({'status': 'success'})
+
+@main_bp.route('/api/documents/batch_delete', methods=['POST'])
+@login_required
+@admin_required
+def batch_delete_documents():
+    data = request.get_json()
+    if not data or 'doc_ids' not in data:
+        return jsonify({'error': 'Missing doc_ids'}), 400
+    doc_ids = data['doc_ids']
+    if not isinstance(doc_ids, list):
+        return jsonify({'error': 'doc_ids must be a list'}), 400
+
+    deleted_count = 0
+    for doc_id in doc_ids:
+        doc = PatentDocument.query.get(doc_id)
+        if doc:
+            try:
+                # 删除物理文件
+                if os.path.exists(doc.original_path):
+                    os.remove(doc.original_path)
+                for result in doc.results:
+                    if result.report_path and os.path.exists(result.report_path):
+                        os.remove(result.report_path)
+                db.session.delete(doc)
+                deleted_count += 1
+            except Exception as e:
+                current_app.logger.error(f"Error deleting doc {doc_id}: {e}")
+    db.session.commit()
+    return jsonify({'status': 'success', 'deleted_count': deleted_count})

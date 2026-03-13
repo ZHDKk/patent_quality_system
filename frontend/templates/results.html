@@ -1,9 +1,31 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>我的质检结果</h2>
+
+<!-- 详情模态框 -->
+<div id="detailModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h3 id="modalFilename"></h3>
+        <div id="modalStatus"></div>
+        <div id="modalUploadTime"></div>
+        <div id="modalResults"></div>
+        <div id="modalPagination" class="pagination"></div>
+    </div>
+</div>
+
+<!-- 批量删除按钮（仅admin可见） -->
+<div style="margin-bottom: 1rem;">
+    {% if current_user.role == 'admin' %}
+    <button id="batchDeleteBtn" class="btn btn-danger" disabled>批量删除</button>
+    {% endif %}
+</div>
+
 <table>
     <thead>
         <tr>
+            <th><input type="checkbox" id="selectAll"></th>
+            <th>序号</th>
             <th>文件名</th>
             <th>上传时间</th>
             <th>状态</th>
@@ -12,18 +34,451 @@
     </thead>
     <tbody>
         {% for doc in docs %}
-        <tr>
+        <tr data-doc-id="{{ doc.id }}">
+            <td><input type="checkbox" class="doc-checkbox" value="{{ doc.id }}"></td>
+            <td class="row-number">{{ (pagination.page - 1) * pagination.per_page + loop.index }}</td>
             <td>{{ doc.filename }}</td>
             <td>{{ doc.upload_time }}</td>
-            <td>{{ doc.status }}</td>
             <td>
-                {% if doc.status == 'completed' %}
-                    <a href="{{ url_for('main.view_result', doc_id=doc.id) }}">查看详情</a>
-                    <a href="{{ url_for('main.compare', doc_id=doc.id) }}">版本对比</a>
+                {% if doc.status == 'processing' %}
+                    <span class="spinner"></span> 处理中
+                {% elif doc.status == 'completed' %}
+                    已完成
+                {% elif doc.status == 'failed' %}
+                    失败
+                {% else %}
+                    {{ doc.status }}
+                {% endif %}
+            </td>
+            <td>
+                <button class="btn btn-secondary btn-sm" onclick="showDetails({{ doc.id }})">详情</button>
+                <!-- 详情改为链接跳转到 result_detail.html -->
+<!--                <a href="{{ url_for('main.view_result', doc_id=doc.id) }}" class="btn btn-secondary btn-sm">详情</a>-->
+                {% if current_user.role == 'admin' %}
+                <button class="btn btn-danger btn-sm" onclick="confirmDelete({{ doc.id }})">删除</button>
                 {% endif %}
             </td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+
+<!-- 分页控件 -->
+{% if pagination.pages > 1 %}
+<div class="pagination">
+    {% if pagination.has_prev %}
+        <a href="{{ url_for('main.results', page=pagination.prev_num) }}">上一页</a>
+    {% endif %}
+    {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if page_num %}
+            {% if page_num == pagination.page %}
+                <span class="current">{{ page_num }}</span>
+            {% else %}
+                <a href="{{ url_for('main.results', page=page_num) }}">{{ page_num }}</a>
+            {% endif %}
+        {% else %}
+            <span class="ellipsis">…</span>
+        {% endif %}
+    {% endfor %}
+    {% if pagination.has_next %}
+        <a href="{{ url_for('main.results', page=pagination.next_num) }}">下一页</a>
+    {% endif %}
+</div>
+{% endif %}
+
+<style>
+/* 模态框样式 - 最大化布局 */
+.modal {
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.5);
+}
+.modal-content {
+    background-color: var(--card-bg);
+    margin: 2% auto;
+    padding: 20px;
+    border: 1px solid var(--border-color);
+    width: 90%;
+    max-width: 1400px;
+    max-height: 90vh;
+    overflow-y: auto;
+    border-radius: 8px;
+    color: var(--text-primary);
+}
+.close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.close:hover,
+.close:focus {
+    color: white;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+/* 旋转动画 */
+.spinner {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid rgba(255,255,255,.3);
+    border-radius: 50%;
+    border-top-color: var(--primary);
+    animation: spin 1s ease-in-out infinite;
+    margin-right: 0.5rem;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* 操作按钮样式 */
+.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+.btn-danger {
+    background: #dc3545;
+}
+.btn-danger:hover {
+    background: #c82333;
+}
+
+/* 分页样式 */
+.pagination {
+    margin-top: 1.5rem;
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+.pagination a, .pagination span.current {
+    padding: 0.5rem 0.8rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    text-decoration: none;
+    color: var(--text-primary);
+}
+.pagination a:hover {
+    background: rgba(255,255,255,0.1);
+}
+.pagination span.current {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+.pagination span.ellipsis {
+    padding: 0.5rem 0.8rem;
+    color: var(--text-secondary);
+}
+
+/* 表格样式 */
+.issues-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+.issues-table th, .issues-table td {
+    border: 1px solid var(--border-color);
+    padding: 0.5rem;
+    text-align: left;
+    vertical-align: top;
+}
+.issues-table th {
+    background: rgba(30, 41, 59, 0.8);
+}
+.issues-table td {
+    word-break: break-word;
+}
+
+/* 复选框样式 */
+.doc-checkbox {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+#selectAll {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+#batchDeleteBtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+</style>
+
+<script>
+// ==================== 全局变量 ====================
+let currentIssues = [];           // 当前文档的所有问题列表
+let currentPage = 1;
+const itemsPerPage = 10;
+
+// ==================== 函数定义区 ====================
+function renumberRows() {
+    const rows = document.querySelectorAll('table tbody tr');
+    const currentPage = {{ pagination.page }};
+    const perPage = {{ pagination.per_page }};
+    const startNum = (currentPage - 1) * perPage + 1;
+    rows.forEach((row, index) => {
+        const numCell = row.querySelector('.row-number');
+        if (numCell) numCell.textContent = startNum + index;
+    });
+}
+
+// 模态框相关函数
+const modal = document.getElementById('detailModal');
+const modalFilename = document.getElementById('modalFilename');
+const modalStatus = document.getElementById('modalStatus');
+const modalUploadTime = document.getElementById('modalUploadTime');
+const modalResults = document.getElementById('modalResults');
+const modalPagination = document.getElementById('modalPagination');
+const closeSpan = document.querySelector('.close');
+
+if (closeSpan) {
+    closeSpan.onclick = function() { if(modal) modal.style.display = 'none'; };
+}
+window.onclick = function(event) {
+    if (event.target == modal && modal) modal.style.display = 'none';
+};
+
+// 渲染分页控件
+function renderPagination(totalItems, currentPage, itemsPerPage, onPageChange) {
+    const totalPages = Math.ceil(totalItems / itemsPerPage);
+    if (totalPages <= 1) {
+        modalPagination.innerHTML = '';
+        return;
+    }
+    let html = '';
+    if (currentPage > 1) {
+        html += `<a href="#" data-page="${currentPage-1}">上一页</a>`;
+    }
+    for (let i = 1; i <= totalPages; i++) {
+        if (i === currentPage) {
+            html += `<span class="current">${i}</span>`;
+        } else {
+            html += `<a href="#" data-page="${i}">${i}</a>`;
+        }
+    }
+    if (currentPage < totalPages) {
+        html += `<a href="#" data-page="${currentPage+1}">下一页</a>`;
+    }
+    modalPagination.innerHTML = html;
+    modalPagination.querySelectorAll('a').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const page = parseInt(e.target.dataset.page);
+            onPageChange(page);
+        });
+    });
+}
+
+// 渲染表格
+function renderIssuesTable(issues, page) {
+    const start = (page - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    const pageIssues = issues.slice(start, end);
+
+    let tableHtml = '<table class="issues-table"><thead><tr><th>版本</th><th>规则ID</th><th>问题描述</th><th>建议</th><th>严重程度</th></tr></thead><tbody>';
+    if (pageIssues.length === 0) {
+        tableHtml += '<tr><td colspan="5" style="text-align:center;">暂无质检问题</td></tr>';
+    } else {
+        pageIssues.forEach(issue => {
+            tableHtml += `<tr>
+                <td>${issue.version || '-'}</td>
+                <td>${issue.rule_id || ''}</td>
+                <td>${issue.issue || issue.description || ''}</td>
+                <td>${issue.suggestion || ''}</td>
+                <td>${issue.severity || '提示'}</td>
+            </tr>`;
+        });
+    }
+    tableHtml += '</tbody></table>';
+    return tableHtml;
+}
+
+async function showDetails(docId) {
+    if (!modalResults) return;
+    modalResults.innerHTML = '<p>加载中...</p>';
+    if(modal) modal.style.display = 'block';
+    modalPagination.innerHTML = '';
+    try {
+        const response = await fetch(`/api/document/${docId}/details`);
+        if (!response.ok) throw new Error('获取详情失败');
+        const data = await response.json();
+        modalFilename.textContent = data.filename;
+        modalStatus.textContent = `状态: ${data.status}`;
+        // 格式化上传时间为本地时间
+        const uploadTime = new Date(data.upload_time);
+        modalUploadTime.textContent = `上传时间: ${uploadTime.toLocaleString()}`;
+
+        // 收集所有问题
+        currentIssues = [];
+        if (data.results && data.results.length > 0) {
+            data.results.forEach(res => {
+                const version = res.version;
+                const checkTime = new Date(res.check_time).toLocaleString();
+                if (res.result && res.result.issues && res.result.issues.length > 0) {
+                    res.result.issues.forEach(issue => {
+                        currentIssues.push({
+                            version: version,
+                            check_time: checkTime,
+                            rule_id: issue.rule_id || '',
+                            issue: issue.issue || issue.description || '',
+                            suggestion: issue.suggestion || '',
+                            severity: issue.severity || '提示'
+                        });
+                    });
+                } else if (res.result && res.result.raw_output) {
+                    // 如果有原始输出但没有 issues，添加一条特殊记录
+                    currentIssues.push({
+                        version: version,
+                        rule_id: '原始输出',
+                        issue: '',
+                        suggestion: '',
+                        severity: '信息',
+                        raw: res.result.raw_output
+                    });
+                }
+            });
+        }
+
+        // 重置到第一页
+        currentPage = 1;
+        renderIssuesPage(currentPage);
+    } catch (error) {
+        modalResults.innerHTML = `<p style="color: red;">加载失败: ${error.message}</p>`;
+    }
+}
+
+function renderIssuesPage(page) {
+    const start = (page - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    const pageIssues = currentIssues.slice(start, end);
+
+    let html = '';
+    if (currentIssues.length === 0) {
+        html = '<p>暂无质检结果</p>';
+    } else {
+        // 构建表格
+        let tableHtml = '<table class="issues-table"><thead><tr><th>版本</th><th>规则ID</th><th>问题描述</th><th>建议</th><th>严重程度</th></tr></thead><tbody>';
+        pageIssues.forEach(issue => {
+            if (issue.rule_id === '原始输出') {
+                // 对于原始输出，单独显示在一行，合并单元格
+                tableHtml += `<tr><td colspan="5"><pre>${issue.raw}</pre></td></tr>`;
+            } else {
+                tableHtml += `<tr>
+                    <td>${issue.version}</td>
+                    <td>${issue.rule_id}</td>
+                    <td>${issue.issue}</td>
+                    <td>${issue.suggestion}</td>
+                    <td>${issue.severity}</td>
+                </tr>`;
+            }
+        });
+        tableHtml += '</tbody></table>';
+        html = tableHtml;
+    }
+
+    modalResults.innerHTML = html;
+
+    // 渲染分页
+    if (currentIssues.length > itemsPerPage) {
+        renderPagination(currentIssues.length, page, itemsPerPage, (newPage) => {
+            currentPage = newPage;
+            renderIssuesPage(newPage);
+        });
+    } else {
+        modalPagination.innerHTML = '';
+    }
+}
+
+function confirmDelete(docId) {
+    if (confirm('确定要删除该文档及其所有质检结果吗？此操作不可恢复。')) {
+        fetch(`/api/document/${docId}`, { method: 'DELETE' })
+            .then(response => {
+                if (response.ok) {
+                    const row = document.querySelector(`tr[data-doc-id="${docId}"]`);
+                    if (row) row.remove();
+                    renumberRows();
+                    updateBatchDeleteButton(); // 更新批量删除按钮状态
+                } else {
+                    alert('删除失败');
+                }
+            })
+            .catch(err => alert('删除失败: ' + err));
+    }
+}
+
+// ==================== 初始化逻辑 ====================
+document.addEventListener('DOMContentLoaded', function() {
+    const selectAllCheckbox = document.getElementById('selectAll');
+    const docCheckboxes = document.querySelectorAll('.doc-checkbox');
+    const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+
+    // 更新批量删除按钮状态
+    window.updateBatchDeleteButton = function() {
+        if (!batchDeleteBtn) return;
+        const anyChecked = Array.from(docCheckboxes).some(cb => cb.checked);
+        batchDeleteBtn.disabled = !anyChecked;
+    };
+
+    // 全选/取消全选
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+            docCheckboxes.forEach(cb => cb.checked = this.checked);
+            updateBatchDeleteButton();
+        });
+    }
+
+    // 单个复选框状态变化
+    docCheckboxes.forEach(cb => {
+        cb.addEventListener('change', updateBatchDeleteButton);
+    });
+
+    // 批量删除按钮点击事件
+    if (batchDeleteBtn) {
+        batchDeleteBtn.addEventListener('click', function() {
+            const selectedIds = Array.from(docCheckboxes)
+                .filter(cb => cb.checked)
+                .map(cb => cb.value);
+            if (selectedIds.length === 0) return;
+            if (!confirm(`确定要删除选中的 ${selectedIds.length} 个文档吗？此操作不可恢复。`)) return;
+
+            fetch('/api/documents/batch_delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({doc_ids: selectedIds})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    selectedIds.forEach(id => {
+                        const row = document.querySelector(`tr[data-doc-id="${id}"]`);
+                        if (row) row.remove();
+                    });
+                    renumberRows();
+                    if (selectAllCheckbox) selectAllCheckbox.checked = false;
+                    updateBatchDeleteButton();
+                    alert(`成功删除 ${data.deleted_count} 个文档`);
+                } else {
+                    alert('批量删除失败');
+                }
+            })
+            .catch(err => alert('批量删除失败: ' + err));
+        });
+    }
+
+    // 初始化执行
+    renumberRows();
+    updateBatchDeleteButton();
+});
+</script>
 {% endblock %}

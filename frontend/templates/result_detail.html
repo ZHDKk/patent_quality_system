@@ -1,21 +1,200 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>质检详情 - {{ doc.filename }}</h2>
-<p style="color: var(--text-secondary); margin-bottom: 1.5rem;">上传时间: {{ doc.upload_time }}</p>
+<h2>质检详情</h2>
+<div style="margin-bottom: 1.5rem;">
+    <h3 style="margin-bottom: 0.5rem;">{{ doc.filename }}</h3>
+    <p style="color: var(--text-secondary);" id="upload-time" data-upload="{{ doc.upload_time.isoformat() }}">上传时间: 加载中...</p>
+</div>
 
-<h3>质检结果版本</h3>
-<ul style="list-style: none; padding: 0; margin-bottom: 2rem;">
-    {% for res in results %}
-    <li style="padding: 1rem; border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 1rem; background: rgba(15,23,42,0.5);">
-        <span style="font-weight: 500;">版本 {{ res.version }}</span> - {{ res.check_time }}
-        <a href="{{ url_for('main.download_report', result_id=res.id) }}" class="btn btn-secondary" style="margin-left: 1rem;">下载报告</a>
-        {% if not loop.last %}
-        <a href="{{ url_for('main.compare', doc_id=doc.id) }}?v1={{ res.id }}&v2={{ results[loop.index0+1].id }}" class="btn btn-primary" style="margin-left: 0.5rem;">与下一版本对比</a>
-        {% endif %}
-    </li>
-    {% endfor %}
-</ul>
+<!-- 问题表格容器 -->
+<div id="issues-table-container"></div>
 
-<h3>最新质检结果摘要</h3>
-<pre>{{ results[0].result_json if results else '无结果' }}</pre>
+<!-- 分页控件 -->
+<div id="pagination" class="pagination"></div>
+
+<style>
+/* 表格样式 */
+.issues-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    background: rgba(15,23,42,0.5);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.issues-table th, .issues-table td {
+    border: 1px solid var(--border-color);
+    padding: 0.75rem;
+    text-align: left;
+    vertical-align: top;
+}
+.issues-table th {
+    background: rgba(30, 41, 59, 0.8);
+    font-weight: 600;
+}
+.issues-table td {
+    word-break: break-word;
+}
+/* 分页样式（复用results页面的分页样式） */
+.pagination {
+    margin-top: 2rem;
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+.pagination a, .pagination span.current {
+    padding: 0.5rem 0.8rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    text-decoration: none;
+    color: var(--text-primary);
+    background: rgba(15,23,42,0.5);
+}
+.pagination a:hover {
+    background: rgba(255,255,255,0.1);
+}
+.pagination span.current {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+.pagination span.ellipsis {
+    padding: 0.5rem 0.8rem;
+    color: var(--text-secondary);
+}
+/* 返回按钮 */
+.back-btn {
+    display: inline-block;
+    margin-bottom: 1rem;
+    padding: 0.5rem 1rem;
+    background: var(--gradient);
+    border-radius: 4px;
+    color: white;
+    text-decoration: none;
+}
+</style>
+
+<a href="{{ url_for('main.results') }}" class="back-btn">← 返回结果列表</a>
+
+<script>
+// 将从后端传递的 results 转换为 JavaScript 对象
+const results = {{ results|tojson }};
+const docUploadTime = document.getElementById('upload-time').dataset.upload;
+
+// 格式化上传时间
+const uploadDate = new Date(docUploadTime);
+document.getElementById('upload-time').textContent = `上传时间: ${uploadDate.toLocaleString()}`;
+
+// 收集所有问题
+let allIssues = [];
+if (results && results.length > 0) {
+    results.forEach(res => {
+        const version = res.version;
+        const checkTime = new Date(res.check_time).toLocaleString();
+        let resultJson = {};
+        try {
+            resultJson = JSON.parse(res.result_json);
+        } catch (e) {
+            resultJson = { raw_output: res.result_json };
+        }
+
+        if (resultJson.issues && Array.isArray(resultJson.issues) && resultJson.issues.length > 0) {
+            resultJson.issues.forEach(issue => {
+                allIssues.push({
+                    version: version,
+                    check_time: checkTime,
+                    rule_id: issue.rule_id || '',
+                    issue: issue.issue || issue.description || '',
+                    suggestion: issue.suggestion || '',
+                    severity: issue.severity || '提示'
+                });
+            });
+        } else if (resultJson.raw_output) {
+            // 有原始输出但没有结构化问题，将原始输出作为一条特殊记录
+            allIssues.push({
+                version: version,
+                rule_id: '原始输出',
+                issue: '',
+                suggestion: '',
+                severity: '信息',
+                raw: resultJson.raw_output
+            });
+        }
+    });
+}
+
+// 分页配置
+const itemsPerPage = 10;
+let currentPage = 1;
+
+function renderTable(page) {
+    const start = (page - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    const pageIssues = allIssues.slice(start, end);
+
+    let html = '';
+    if (allIssues.length === 0) {
+        html = '<p>暂无质检结果</p>';
+    } else {
+        html = '<table class="issues-table"><thead><tr><th>版本</th><th>规则ID</th><th>问题描述</th><th>建议</th><th>严重程度</th></tr></thead><tbody>';
+        pageIssues.forEach(issue => {
+            if (issue.rule_id === '原始输出') {
+                // 原始输出合并所有列
+                html += `<tr><td colspan="5"><pre>${issue.raw}</pre></td></tr>`;
+            } else {
+                html += `<tr>
+                    <td>${issue.version}</td>
+                    <td>${issue.rule_id}</td>
+                    <td>${issue.issue}</td>
+                    <td>${issue.suggestion}</td>
+                    <td>${issue.severity}</td>
+                </tr>`;
+            }
+        });
+        html += '</tbody></table>';
+    }
+    document.getElementById('issues-table-container').innerHTML = html;
+    renderPagination();
+}
+
+function renderPagination() {
+    const totalPages = Math.ceil(allIssues.length / itemsPerPage);
+    const paginationDiv = document.getElementById('pagination');
+    if (totalPages <= 1) {
+        paginationDiv.innerHTML = '';
+        return;
+    }
+    let html = '';
+    if (currentPage > 1) {
+        html += `<a href="#" data-page="${currentPage-1}">上一页</a>`;
+    }
+    for (let i = 1; i <= totalPages; i++) {
+        if (i === currentPage) {
+            html += `<span class="current">${i}</span>`;
+        } else {
+            html += `<a href="#" data-page="${i}">${i}</a>`;
+        }
+    }
+    if (currentPage < totalPages) {
+        html += `<a href="#" data-page="${currentPage+1}">下一页</a>`;
+    }
+    paginationDiv.innerHTML = html;
+
+    // 为所有分页链接绑定事件
+    paginationDiv.querySelectorAll('a').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const page = parseInt(e.target.dataset.page);
+            if (page && page !== currentPage) {
+                currentPage = page;
+                renderTable(currentPage);
+            }
+        });
+    });
+}
+
+// 初始渲染
+renderTable(1);
+</script>
 {% endblock %}

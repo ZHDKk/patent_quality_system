@@ -22,7 +22,7 @@ class RuleEngine:
                 with open(latest.rules_file_path, 'rb') as f:
                     encrypted = f.read()
                 decrypted = self.cipher.decrypt(encrypted)
-                temp_path = '/tmp/rules_temp.xlsx'
+                temp_path = './rules_temp.xlsx'
                 with open(temp_path, 'wb') as f:
                     f.write(decrypted)
 

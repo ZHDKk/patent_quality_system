@@ -27,6 +27,7 @@
 9、检查所有容器的运行状态：docker-compose ps
 10、 停止并移除旧容器，避免冲突：docker-compose down
 11、会强制重新构建镜像，应用新的基础镜像：docker-compose up -d --build
+    重启某个容器指令：docker-compose restart celery_worker
 12、所有状态ok：
 (.venv) PS D:\pro\pro\other_pro\python\patent_quality_system> docker-compose up -d
 [+] up 7/7
@@ -68,3 +69,14 @@ exit()
 停止删除旧容器：docker-compose down
 重新构建镜像：docker-compose up -d --build
 检查容器内模板文件是否存在：docker-compose exec backend ls /app/frontend/templates
+
+13.修改数据库字段类型:
+进入终端输入:
+docker ps
+docker exec -it <容器名> mysql -uroot -p patent_quality  然后输入mysql密码
+注意：语句末尾必须有分号 ;，然后按回车执行。
+在 MySQL 命令行中执行：DESCRIBE patent_documents;
+修改字段类型：ALTER TABLE patent_documents MODIFY parsed_json LONGTEXT;
+验证修改结果：DESCRIBE patent_documents;
+退出 MySQL：输入 exit 退出 MySQL 客户端。
+重启 Celery Worker：docker-compose restart celery_worker

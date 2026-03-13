@@ -22,16 +22,16 @@ services:
       timeout: 10s
       retries: 5
 
-  dedoc:
-    image: dedocproject/dedoc
-    networks:
-      - patent-network
-    volumes:
-      - dedoc-temp:/tmp
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:1231/"]
-      timeout: 10s
-      retries: 5
+#  dedoc:
+#    image: dedocproject/dedoc
+#    networks:
+#      - patent-network
+#    volumes:
+#      - dedoc-temp:/tmp
+#    healthcheck:
+#      test: ["CMD", "curl", "-f", "http://localhost:1231/"]
+#      timeout: 10s
+#      retries: 5
 
   backend:
     build:
@@ -55,13 +55,14 @@ services:
       - ./reports:/app/reports
       - ./rules:/app/rules
       - ./frontend:/app/frontend  # 开发环境挂载卷
+      - ./docling_cache:/root/.cache/docling
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
-      dedoc:
-        condition: service_healthy
+#      dedoc:
+#        condition: service_healthy
     networks:
       - patent-network
 
@@ -85,15 +86,15 @@ services:
       - ./uploads:/app/uploads
       - ./reports:/app/reports
       - ./rules:/app/rules
-      # 关键修正：路径从 /frontend 改为 /app/frontend（和 backend 统一）
       - ./frontend:/app/frontend
+      - ./docling_cache:/root/.cache/docling
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
-      dedoc:
-        condition: service_healthy
+#      dedoc:
+#        condition: service_healthy
     networks:
       - patent-network
 
