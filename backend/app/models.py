@@ -10,7 +10,12 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
     role = db.Column(db.String(20), default='employee')  # admin, employee
+    # 存储权限列表，如 ["upload", "view_results", "manage_rules", "manage_users"]
+    permissions = db.Column(db.JSON, default=['upload', 'view_results'])
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def has_permission(self, perm):
+        return self.role == 'admin' or (self.permissions and perm in self.permissions)
 
     def __repr__(self):
         return f'<User {self.username}>'
@@ -31,7 +36,7 @@ class PatentDocument(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255))
     original_path = db.Column(db.String(500))
-    parsed_json = db.Column(db.Text().with_variant(db.Text(length=2**32-1), 'mysql'), nullable=True)      # 解析后的结构化内容（JSON）
+    parsed_json = db.Column(db.Text)      # 解析后的结构化内容（JSON）
     uploader_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     upload_time = db.Column(db.DateTime, default=datetime.utcnow)
     status = db.Column(db.String(20), default='pending')  # pending, processing, completed, failed
@@ -44,13 +49,13 @@ class QualityCheckResult(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     document_id = db.Column(db.Integer, db.ForeignKey('patent_documents.id'))
     version = db.Column(db.Integer, default=1)
-    parent_result_id = db.Column(db.Integer, db.ForeignKey('quality_check_results.id'), nullable=True)  # 添加外键
+    parent_result_id = db.Column(db.Integer, db.ForeignKey('quality_check_results.id'), nullable=True)
     rule_version_id = db.Column(db.Integer, db.ForeignKey('rule_versions.id'))
     result_json = db.Column(db.Text)
     report_path = db.Column(db.String(500))
+    revised_doc_path = db.Column(db.String(500))  # 新增：修订版文档路径
     check_time = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # 自关联关系（remote_side 指明哪一端是“父”）
     parent = db.relationship('QualityCheckResult', remote_side=[id], backref='children')
 
 class RuleVersion(db.Model):

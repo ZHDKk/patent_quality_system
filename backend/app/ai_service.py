@@ -56,7 +56,7 @@ class KimiAIService:
             {"role": "system", "content": rule_content},
             {"role": "system", "content": doc_content},
             {"role": "system", "content": "你是 Kimi，由 Moonshot AI 提供的人工智能助手，你更擅长中文和英文的对话。你会为用户提供安全，有帮助，准确的回答。同时，你会拒绝一切涉及恐怖主义，种族歧视，黄色暴力等问题的回答。Moonshot AI 为专有名词，不可翻译成其他语言。"},
-            {"role": "user", "content": "你是一名专业的专利质检人员，请根据提供的质检规则库对专利文档进行质检，返回结果要保证准确度以及全面性。以 JSON 格式输出，包含字段：rule_id, issue, suggestion, severity。如果没有发现问题，返回空数组 []。"}
+            {"role": "user", "content": "你是一名专业的专利质检人员，请根据提供的质检规则库对专利文档进行详细质检，返回结果要保证准确度以及全面性。以 JSON 格式输出，包含字段：rule_id, issue, suggestion, severity。如果没有发现问题，返回空数组 []。"}
         ]
         completion = self.client.chat.completions.create(
             model=model,

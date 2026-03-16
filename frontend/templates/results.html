@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>我的质检结果</h2>
+<h2>
+    {% if view_user %}
+        {{ view_user.username }}的质检结果
+    {% else %}
+        我的质检结果
+    {% endif %}
+</h2>
 
 <!-- 批量删除按钮（仅admin可见） -->
 <div style="margin-bottom: 1rem;">
@@ -29,7 +35,7 @@
             <td>{{ doc.upload_time }}</td>
             <td class="doc-status" data-doc-id="{{ doc.id }}" data-status="{{ doc.status }}">
                 {% if doc.status == 'processing' %}
-                    <span class="spinner"></span> 处理中
+                    <span class="spinner"></span> 质检中
                 {% elif doc.status == 'completed' %}
                     已完成
                 {% elif doc.status == 'failed' %}

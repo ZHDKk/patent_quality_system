@@ -45,16 +45,28 @@ def register():
         username = request.form['username']
         password = request.form['password']
         role = request.form.get('role', 'employee')
+        # 获取权限列表（从表单的多选框获取）
+        permissions = request.form.getlist('permissions')  # 返回列表
+        if not permissions:
+            permissions = ['upload', 'view_results']  # 默认
         if User.query.filter_by(username=username).first():
             flash('Username already exists')
             return redirect(url_for('auth.register'))
         user = User(
             username=username,
             password_hash=generate_password_hash(password),
-            role=role
+            role=role,
+            permissions=permissions
         )
         db.session.add(user)
         db.session.commit()
         flash('User created successfully')
-        return redirect(url_for('main.index'))
-    return render_template('register.html')
+        return redirect(url_for('main.manage_users'))
+    # 渲染注册页面，传递可用权限列表
+    available_permissions = [
+        {'id': 'upload', 'name': '上传文档'},
+        {'id': 'view_results', 'name': '查看结果'},
+        {'id': 'manage_rules', 'name': '管理规则'},
+        {'id': 'manage_users', 'name': '管理用户'}
+    ]
+    return render_template('register.html', permissions=available_permissions)

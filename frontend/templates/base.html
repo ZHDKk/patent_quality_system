@@ -5,8 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>专利质检系统</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <!-- 引入现代字体（增强科技感） -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* 导航高亮样式 */
+        .nav-link.active {
+            color: var(--primary) !important;
+            font-size: 1.1em;
+            font-weight: 700;
+        }
+    </style>
 </head>
 <body>
     <nav>
@@ -14,15 +21,15 @@
             <a href="{{ url_for('main.index') }}" class="brand-logo">专利质检系统</a>
             <ul>
                 {% if current_user.is_authenticated %}
-                    <li><a href="{{ url_for('main.upload') }}">上传</a></li>
-                    <li><a href="{{ url_for('main.results') }}">我的结果</a></li>
+                    <li><a href="{{ url_for('main.upload') }}" class="nav-link">上传</a></li>
+                    <li><a href="{{ url_for('main.results') }}" class="nav-link">我的结果</a></li>
                     {% if current_user.role == 'admin' %}
-                        <li><a href="{{ url_for('main.manage_rules') }}">规则管理</a></li>
-                        <li><a href="{{ url_for('main.manage_users') }}">用户管理</a></li>
+                        <li><a href="{{ url_for('main.manage_rules') }}" class="nav-link">规则管理</a></li>
+                        <li><a href="{{ url_for('main.manage_users') }}" class="nav-link">用户管理</a></li>
                     {% endif %}
-                    <li><a href="{{ url_for('auth.logout') }}">注销({{ current_user.username }})</a></li>
+                    <li><a href="#" onclick="return confirmLogout();">退出({{ current_user.username }})</a></li>
                 {% else %}
-                    <li><a href="{{ url_for('auth.login') }}">登录</a></li>
+                    <li><a href="{{ url_for('auth.login') }}" class="nav-link">登录</a></li>
                 {% endif %}
             </ul>
         </div>
@@ -40,5 +47,28 @@
         {% block content %}{% endblock %}
     </main>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        // 退出登录确认函数
+        function confirmLogout() {
+            if (confirm('确定要退出登录吗？')) {
+                window.location.href = "{{ url_for('auth.logout') }}";
+            }
+            return false;
+        }
+
+        // 导航高亮
+        document.addEventListener('DOMContentLoaded', function() {
+            const currentPath = window.location.pathname;
+            document.querySelectorAll('.nav-link').forEach(link => {
+                const linkPath = link.getAttribute('href');
+                // 去除末尾斜杠后比较
+                const normalizedCurrent = currentPath.replace(/\/$/, '');
+                const normalizedLink = linkPath.replace(/\/$/, '');
+                if (normalizedCurrent === normalizedLink) {
+                    link.classList.add('active');
+                }
+            });
+        });
+    </script>
 </body>
 </html>

@@ -1,8 +1,11 @@
 import os
 import json
+import subprocess
+import tempfile
 import uuid
 
-from flask import Blueprint, request, jsonify, render_template, current_app, flash, redirect, url_for
+from flask import Blueprint, request, jsonify, render_template, current_app, flash, redirect, url_for, make_response, \
+    send_file
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from datetime import datetime
@@ -72,6 +75,9 @@ def upload():
 @log_operation('batch_upload')
 def batch_upload():
     files = request.files.getlist('files')
+    print(f"【调试】收到文件数量: {len(files)}")
+    for i, f in enumerate(files):
+        print(f"  文件 {i}: {f.filename}")
     if not files:
         return jsonify({'error': 'No files'}), 400
 
@@ -79,30 +85,48 @@ def batch_upload():
     model = request.form.get('model', 'kimi-k2-turbo-preview')
 
     doc_ids = []
-    for file in files:
-        if file and allowed_file(file.filename):
-            original_filename = file.filename
-            safe_filename = secure_filename(original_filename)
-            if not safe_filename:
-                ext = os.path.splitext(original_filename)[1]
-                safe_filename = str(uuid.uuid4()) + ext
-            file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], safe_filename)
-            file.save(file_path)
+    failed_files = []  # 记录失败的文件名及原因
 
-            doc = PatentDocument(
-                filename=original_filename,
-                original_path=file_path,
-                uploader_id=current_user.id
-            )
-            db.session.add(doc)
-            db.session.flush()
-            doc_ids.append(doc.id)
+    for file in files:
+        if not file or not allowed_file(file.filename):
+            failed_files.append({'name': file.filename, 'reason': '文件类型不允许'})
+            continue
+
+        original_filename = file.filename
+        safe_filename = secure_filename(original_filename)
+        if not safe_filename:
+            ext = os.path.splitext(original_filename)[1]
+            safe_filename = str(uuid.uuid4()) + ext
+
+        file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], safe_filename)
+
+        try:
+            file.save(file_path)
+        except Exception as e:
+            failed_files.append({'name': original_filename, 'reason': f'保存失败: {str(e)}'})
+            continue
+
+        doc = PatentDocument(
+            filename=original_filename,
+            original_path=file_path,
+            uploader_id=current_user.id
+        )
+        db.session.add(doc)
+        db.session.flush()
+        doc_ids.append(doc.id)
+
     db.session.commit()
 
+    # 触发 Celery 任务
     for doc_id in doc_ids:
         process_patent_document.delay(doc_id, parse_mode=parse_mode, model=model)
 
-    return jsonify({'status': 'success', 'doc_ids': doc_ids, 'count': len(doc_ids)})
+    return jsonify({
+        'status': 'success',
+        'doc_ids': doc_ids,
+        'count': len(doc_ids),
+        'failed': failed_files   # 返回失败文件列表
+    })
 
 @main_bp.route('/results')
 @login_required
@@ -112,6 +136,12 @@ def results():
     query = PatentDocument.query.filter_by(uploader_id=current_user.id).order_by(PatentDocument.upload_time.desc())
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     docs = pagination.items
+    # 为每个文档预加载最新结果（可选）
+    for doc in docs:
+        if doc.results:
+            doc.latest_result = doc.results[-1]  # 假设按版本升序，最后一个是最新
+        else:
+            doc.latest_result = None
     return render_template('results.html', docs=docs, pagination=pagination)
 
 @main_bp.route('/result/<int:doc_id>')
@@ -125,19 +155,24 @@ def view_result(doc_id):
     results_objs = QualityCheckResult.query.filter_by(document_id=doc_id).order_by(QualityCheckResult.version).all()
     results_data = []
     for res in results_objs:
-        # 关键：将 result_json 字符串解析为字典
         try:
             result_content = json.loads(res.result_json) if res.result_json else {}
         except:
             result_content = {"raw_output": res.result_json}
-
         results_data.append({
             'id': res.id,
             'version': res.version,
             'check_time': res.check_time.isoformat(),
-            'result_json': result_content,  # 现在是字典
+            'result_json': result_content,
+            'revised_doc_path': res.revised_doc_path
         })
-    return render_template('result_detail.html', doc=doc, results=results_data)
+
+    # 判断是否需要显示返回特定用户列表的链接
+    view_user = None
+    if current_user.role == 'admin' and doc.uploader_id != current_user.id:
+        view_user = doc.uploader  # 假设文档模型中有 uploader 关系
+
+    return render_template('result_detail.html', doc=doc, results=results_data, view_user=view_user)
 
 @main_bp.route('/compare')
 @login_required
@@ -292,3 +327,186 @@ def documents_status():
         PatentDocument.uploader_id == current_user.id
     ).all()
     return jsonify({doc.id: doc.status for doc in docs})
+
+@main_bp.route('/admin/rules/download/<int:version_id>')
+@login_required
+@admin_required
+def download_rule(version_id):
+    from cryptography.fernet import Fernet
+    rule = RuleVersion.query.get_or_404(version_id)
+    key = os.environ.get('RULE_ENCRYPT_KEY')
+    cipher = Fernet(key.encode() if isinstance(key, str) else key)
+    with open(rule.rules_file_path, 'rb') as f:
+        encrypted = f.read()
+    decrypted = cipher.decrypt(encrypted)
+    # 返回解密后的文件作为附件下载
+    response = make_response(decrypted)
+    response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    response.headers['Content-Disposition'] = f'attachment; filename={rule.version}.xlsx'
+    return response
+
+# 用户权限编辑页面
+@main_bp.route('/admin/user/<int:user_id>/edit', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def edit_user(user_id):
+    user = User.query.get_or_404(user_id)
+    if request.method == 'POST':
+        # 更新权限
+        permissions = request.form.getlist('permissions')
+        user.permissions = permissions
+        db.session.commit()
+        flash('用户权限更新成功')
+        return redirect(url_for('main.manage_users'))
+    # GET 请求：显示编辑表单
+    available_permissions = [
+        {'id': 'upload', 'name': '上传文档'},
+        {'id': 'view_results', 'name': '查看结果'},
+        {'id': 'manage_rules', 'name': '管理规则'},
+        {'id': 'manage_users', 'name': '管理用户'}
+    ]
+    return render_template('edit_user.html', user=user, permissions=available_permissions)
+
+# 查看指定用户的结果
+@main_bp.route('/admin/user/<int:user_id>/results')
+@login_required
+@admin_required
+def user_results(user_id):
+    user = User.query.get_or_404(user_id)
+    page = request.args.get('page', 1, type=int)
+    per_page = 30
+    query = PatentDocument.query.filter_by(uploader_id=user.id).order_by(PatentDocument.upload_time.desc())
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    docs = pagination.items
+    # 使用同一个 results.html 模板，但传递额外的 user 参数用于显示标题
+    return render_template('results.html', docs=docs, pagination=pagination, view_user=user)
+
+# 删除用户（可选）
+@main_bp.route('/api/user/<int:user_id>', methods=['DELETE'])
+@login_required
+@admin_required
+def delete_user(user_id):
+    user = User.query.get_or_404(user_id)
+    if user.id == current_user.id:
+        return jsonify({'error': '不能删除自己'}), 400
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({'status': 'success'})
+
+from .report_generator import generate_revised_document  # 导入修订版生成函数
+
+# 生成修订版文档
+def convert_doc_to_docx(doc_path):
+    """使用 LibreOffice 将 .doc 转换为 .docx，返回临时 .docx 文件路径"""
+    with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp:
+        output_path = tmp.name
+    cmd = [
+        'soffice',
+        '--headless',
+        '--convert-to', 'docx',
+        '--outdir', os.path.dirname(output_path),
+        doc_path
+    ]
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, check=True)
+        base_name = os.path.splitext(os.path.basename(doc_path))[0]
+        converted = os.path.join(os.path.dirname(output_path), base_name + '.docx')
+        if os.path.exists(converted):
+            return converted
+        else:
+            raise Exception("转换后文件未找到")
+    except Exception as e:
+        if os.path.exists(output_path):
+            os.unlink(output_path)
+        raise
+
+@main_bp.route('/api/result/<int:result_id>/generate_revised', methods=['POST'])
+@login_required
+def generate_revised(result_id):
+    result = QualityCheckResult.query.get_or_404(result_id)
+    doc = result.document
+    if doc.uploader_id != current_user.id and current_user.role != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+
+    if result.revised_doc_path and os.path.exists(result.revised_doc_path):
+        return jsonify({'status': 'success', 'message': '已存在'})
+
+    # 确定要处理的文档路径
+    original_path = doc.original_path
+    ext = os.path.splitext(original_path)[1].lower()
+    need_cleanup = False
+    if ext == '.doc':
+        try:
+            original_path = convert_doc_to_docx(original_path)
+            need_cleanup = True
+        except Exception as e:
+            return jsonify({'error': f'转换 .doc 文件失败: {e}'}), 500
+
+    try:
+        result_json = json.loads(result.result_json)
+        issues = result_json.get('issues', [])
+        revised_path = generate_revised_document(
+            original_path,
+            issues,
+            current_app.config['REPORTS_FOLDER']
+        )
+        result.revised_doc_path = revised_path
+        db.session.commit()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        current_app.logger.error(f"生成修订版文档失败: {e}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if need_cleanup and os.path.exists(original_path):
+            os.unlink(original_path)
+
+# 下载修订版文档
+@main_bp.route('/download/revised/<int:result_id>')
+@login_required
+def download_revised(result_id):
+    result = QualityCheckResult.query.get_or_404(result_id)
+    doc = result.document
+    if doc.uploader_id != current_user.id and current_user.role != 'admin':
+        flash('Access denied')
+        return redirect(url_for('main.results'))
+    if not result.revised_doc_path or not os.path.exists(result.revised_doc_path):
+        flash('修订版文档不存在')
+        return redirect(url_for('main.view_result', doc_id=doc.id))
+    return send_file(result.revised_doc_path, as_attachment=True, download_name=f'report_{doc.filename}')
+
+
+@main_bp.route('/admin/rules/delete/<int:version_id>', methods=['POST'])
+@login_required
+@admin_required
+def delete_rule_version(version_id):
+    """
+    删除指定规则版本，同时检查：
+    - 至少保留一个规则版本
+    - 该版本未被任何质检结果引用
+    """
+    rule = RuleVersion.query.get_or_404(version_id)
+
+    # 检查是否只剩一个版本
+    count = RuleVersion.query.count()
+    if count <= 1:
+        flash('至少保留一个规则版本，无法删除', 'error')
+        return redirect(url_for('main.manage_rules'))
+
+    # 检查是否有质检结果关联
+    if QualityCheckResult.query.filter_by(rule_version_id=version_id).first():
+        flash('该规则版本已被质检结果引用，无法删除', 'error')
+        return redirect(url_for('main.manage_rules'))
+
+    try:
+        # 删除加密的规则文件
+        if os.path.exists(rule.rules_file_path):
+            os.remove(rule.rules_file_path)
+        db.session.delete(rule)
+        db.session.commit()
+        flash('规则版本已删除', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'删除失败: {str(e)}', 'error')
+
+    return redirect(url_for('main.manage_rules'))

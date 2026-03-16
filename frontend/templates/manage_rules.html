@@ -3,7 +3,7 @@
 <h2>规则管理</h2>
 
 <h3>上传新规则</h3>
-<form method="post" enctype="multipart/form-data">
+<form id="ruleUploadForm" enctype="multipart/form-data" method="post">
     <div>
         <label>规则文件 (.xlsx):</label>
         <input type="file" name="rule_file" accept=".xlsx" required>
@@ -12,7 +12,8 @@
         <label>版本描述:</label>
         <input type="text" name="description">
     </div>
-    <button type="submit">上传并激活</button>
+    <button type="submit" class="btn btn-primary" id="ruleUploadBtn">上传并激活</button>
+    <div id="ruleUploadLoading" style="display:none; margin-top:1rem;"><span class="spinner"></span> 上传中...</div>
 </form>
 
 <h3>历史版本</h3>
@@ -24,6 +25,7 @@
             <th>创建时间</th>
             <th>创建人</th>
             <th>激活状态</th>
+            <th>操作</th>
         </tr>
     </thead>
     <tbody>
@@ -34,8 +36,62 @@
             <td>{{ v.created_at }}</td>
             <td>{{ v.creator.username }}</td>
             <td>{{ '是' if v.is_active else '否' }}</td>
+            <td>
+                <a href="{{ url_for('main.download_rule', version_id=v.id) }}" class="btn btn-secondary btn-sm">下载</a>
+                {% if versions|length > 1 %}
+<!--                <button class="btn btn-danger btn-sm" onclick="deleteRule('{{ v.id }}')">删除</button>-->
+                <button class="btn btn-danger btn-sm" onclick="deleteRule('{{ v.id }}')" style="display: none;">删除</button>
+                {% else %}
+<!--                <button class="btn btn-danger btn-sm" disabled title="至少保留一个规则版本">删除</button>-->
+                <button class="btn btn-danger btn-sm" disabled title="至少保留一个规则版本" style="display: none;">删除</button>
+                {% endif %}
+            </td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+
+<style>
+.spinner {
+    display: inline-block;
+    width:1rem; height:1rem;
+    border:2px solid rgba(255,255,255,.3);
+    border-radius:50%;
+    border-top-color:var(--primary);
+    animation: spin 1s ease-in-out infinite;
+    margin-right:0.5rem;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.btn-danger { background-color: #dc3545; color: white; }
+.btn-danger:hover { background-color: #c82333; }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+</style>
+
+<script>
+function deleteRule(versionId) {
+    if (!confirm('确定要删除该规则版本吗？此操作不可恢复。')) return;
+
+    // 发送 POST 请求删除
+    fetch(`/admin/rules/delete/${versionId}`, {
+        method: 'POST',
+    })
+    .then(response => {
+        if (response.redirected) {
+            window.location.href = response.url; // 重定向到管理页面
+        } else {
+            alert('删除失败，请刷新页面重试');
+        }
+    })
+    .catch(err => alert('删除失败: ' + err));
+}
+
+// 上传 loading 效果（可选）
+document.getElementById('ruleUploadForm').addEventListener('submit', function(e) {
+    const btn = document.getElementById('ruleUploadBtn');
+    const loading = document.getElementById('ruleUploadLoading');
+    btn.disabled = true;
+    loading.style.display = 'block';
+    // 表单正常提交，页面会刷新，loading 会短暂出现
+});
+</script>
 {% endblock %}

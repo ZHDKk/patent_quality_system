@@ -2,12 +2,30 @@
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
     <h2 style="margin: 0;">质检详情</h2>
-    <a href="{{ url_for('main.results') }}" class="btn btn-primary">← 返回结果列表</a>
+    <a href="
+        {% if view_user %}
+            {{ url_for('main.user_results', user_id=view_user.id) }}
+        {% else %}
+            {{ url_for('main.results') }}
+        {% endif %}
+    " class="btn btn-primary">← 返回结果列表</a>
 </div>
 
 <div style="margin-bottom: 1.5rem;">
     <h3 style="margin-bottom: 0.5rem;">{{ doc.filename }}</h3>
     <p style="color: var(--text-secondary);" id="upload-time" data-upload="{{ doc.upload_time.isoformat() }}">上传时间: 加载中...</p>
+</div>
+
+<!-- 操作按钮区 -->
+<div id="action-buttons" style="margin-bottom: 1rem; display: flex; gap: 1rem;">
+    {% if results and results[0] %}
+        {% if results[0].revised_doc_path %}
+            <a href="{{ url_for('main.download_revised', result_id=results[0].id) }}" class="btn btn-success">下载报告文档</a>
+        {% else %}
+            <button id="generateRevisedBtn" class="btn btn-info" data-result-id="{{ results[0].id }}">生成报告文档</button>
+            <div id="generatingMsg" style="display:none; color: #17a2b8;"><span class="spinner"></span> 生成中...</div>
+        {% endif %}
+    {% endif %}
 </div>
 
 <!-- 问题表格容器 -->
@@ -19,7 +37,7 @@
 <div id="pagination" class="pagination"></div>
 
 <style>
-/* 表格样式 */
+/* 表格样式（保留原样） */
 .issues-table {
     width: 100%;
     border-collapse: collapse;
@@ -69,37 +87,45 @@
     padding: 0.5rem 0.8rem;
     color: var(--text-secondary);
 }
-/* 原始输出样式 */
-.raw-output {
-    background: rgba(0,0,0,0.3);
-    padding: 1rem;
-    border-radius: 4px;
-    font-family: monospace;
-    white-space: pre-wrap;
-    word-break: break-word;
+/* 旋转动画 */
+.spinner {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid rgba(255,255,255,.3);
+    border-radius: 50%;
+    border-top-color: var(--primary);
+    animation: spin 1s ease-in-out infinite;
+    margin-right: 0.5rem;
 }
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+/* 按钮颜色 */
+.btn-info { background-color: #17a2b8; color: white; }
+.btn-info:hover { background-color: #138496; }
+.btn-success { background-color: #28a745; color: white; }
+.btn-success:hover { background-color: #218838; }
 </style>
 
 <script>
-// 从后端接收的数据（已由视图函数处理为可序列化格式）
+// 从后端传递的数据
 const results = {{ results|tojson }};
 const docUploadTime = "{{ doc.upload_time.isoformat() }}";
 
 // 格式化上传时间
 document.getElementById('upload-time').textContent = `上传时间: ${new Date(docUploadTime).toLocaleString()}`;
 
-// 收集所有问题
+// ==================== 表格渲染（保持不变） ====================
 let allIssues = [];
+try {
+    if (results && results.length > 0) {
+        results.forEach(res => {
+            const version = res.version;
+            const checkTime = new Date(res.check_time).toLocaleString();
+            const resultJson = res.result_json;
 
-if (results && results.length > 0) {
-    results.forEach(res => {
-        const version = res.version;
-        const checkTime = new Date(res.check_time).toLocaleString();
-        const resultJson = res.result_json;  // 此时 result_json 已经是对象（字典）
-
-        // 检查是否有 issues 数组
-        if (resultJson.issues && Array.isArray(resultJson.issues) && resultJson.issues.length > 0) {
-            resultJson.issues.forEach(issue => {
+            function addIssue(issue) {
                 allIssues.push({
                     version: version,
                     check_time: checkTime,
@@ -108,42 +134,39 @@ if (results && results.length > 0) {
                     suggestion: issue.suggestion || '',
                     severity: issue.severity || '提示'
                 });
-            });
-        }
-        // 如果有原始输出且无 issues，则单独添加一条记录
-        else if (resultJson.raw_output) {
-            allIssues.push({
-                version: version,
-                check_time: checkTime,
-                rule_id: '原始输出',
-                issue: '',
-                suggestion: '',
-                severity: '信息',
-                raw: resultJson.raw_output
-            });
-        }
-        // 如果既无 issues 也无 raw_output，可添加一条占位记录（可选）
-        else {
-            allIssues.push({
-                version: version,
-                check_time: checkTime,
-                rule_id: '无数据',
-                issue: '该版本质检结果无结构化数据',
-                suggestion: '',
-                severity: '提示'
-            });
-        }
-    });
+            }
+
+            if (Array.isArray(resultJson)) {
+                resultJson.forEach(addIssue);
+            } else if (resultJson && typeof resultJson === 'object') {
+                if (resultJson.issues && Array.isArray(resultJson.issues)) {
+                    resultJson.issues.forEach(addIssue);
+                } else if (resultJson.raw_output) {
+                    allIssues.push({
+                        version: version,
+                        check_time: checkTime,
+                        rule_id: '原始输出',
+                        issue: '',
+                        suggestion: '',
+                        severity: '信息',
+                        raw: resultJson.raw_output
+                    });
+                }
+            }
+        });
+    }
+} catch (e) {
+    console.error('解析结果时出错:', e);
 }
 
 // 分页配置
 const itemsPerPage = 10;
 let currentPage = 1;
 
-// 简单的HTML转义函数
 function escapeHtml(unsafe) {
-    if (!unsafe) return '';
-    return unsafe
+    if (unsafe === null || unsafe === undefined) return '';
+    const str = String(unsafe);
+    return str
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -164,10 +187,8 @@ function renderTable(page) {
     }
 
     let tableHtml = '<table class="issues-table"><thead><tr><th>版本</th><th>规则ID</th><th>问题描述</th><th>建议</th><th>严重程度</th></tr></thead><tbody>';
-
     pageIssues.forEach(issue => {
         if (issue.rule_id === '原始输出') {
-            // 原始输出合并所有列
             tableHtml += `<tr><td colspan="5"><div class="raw-output">${escapeHtml(issue.raw)}</div></td></tr>`;
         } else {
             tableHtml += `<tr>
@@ -179,7 +200,6 @@ function renderTable(page) {
             </tr>`;
         }
     });
-
     tableHtml += '</tbody></table>';
     container.innerHTML = tableHtml;
     renderPagination();
@@ -207,7 +227,6 @@ function renderPagination() {
         html += `<a href="#" data-page="${currentPage+1}">下一页</a>`;
     }
     paginationDiv.innerHTML = html;
-
     paginationDiv.querySelectorAll('a').forEach(link => {
         link.addEventListener('click', (e) => {
             e.preventDefault();
@@ -220,7 +239,46 @@ function renderPagination() {
     });
 }
 
-// 初始渲染
 renderTable(1);
+
+// ==================== 生成修订版文档逻辑（优化版） ====================
+const generateBtn = document.getElementById('generateRevisedBtn');
+if (generateBtn) {
+    generateBtn.addEventListener('click', async function() {
+        const resultId = this.dataset.resultId;
+        const msgDiv = document.getElementById('generatingMsg');
+        const actionDiv = document.getElementById('action-buttons');
+
+        // 隐藏生成按钮，显示加载中
+        this.style.display = 'none';
+        msgDiv.style.display = 'block';
+
+        try {
+            const response = await fetch(`/api/result/${resultId}/generate_revised`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            if (data.status === 'success') {
+                // 移除加载中，添加下载链接
+                msgDiv.style.display = 'none';
+                const downloadLink = document.createElement('a');
+                downloadLink.href = `/download/revised/${resultId}`;
+                downloadLink.className = 'btn btn-success';
+                downloadLink.textContent = '下载报告文档';
+                actionDiv.appendChild(downloadLink);
+            } else {
+                alert('生成失败：' + (data.error || '未知错误'));
+                // 恢复生成按钮
+                this.style.display = 'inline-block';
+                msgDiv.style.display = 'none';
+            }
+        } catch (err) {
+            alert('请求失败：' + err);
+            this.style.display = 'inline-block';
+            msgDiv.style.display = 'none';
+        }
+    });
+}
 </script>
 {% endblock %}

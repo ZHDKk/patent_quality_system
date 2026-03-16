@@ -4,6 +4,7 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
       MYSQL_DATABASE: patent_quality
+      TZ: Asia/Shanghai
     volumes:
       - mysql-data:/var/lib/mysql
     networks:
@@ -56,6 +57,7 @@ services:
       - ./rules:/app/rules
       - ./frontend:/app/frontend  # 开发环境挂载卷
       - ./docling_cache:/root/.cache/docling
+      - ./revised:/app/revised
     depends_on:
       mysql:
         condition: service_healthy

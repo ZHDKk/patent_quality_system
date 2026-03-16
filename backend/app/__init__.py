@@ -68,6 +68,14 @@ def create_app(config_object=None):
     os.makedirs(app.config['RULES_FOLDER'], exist_ok=True)
     os.makedirs(app.config['REPORTS_FOLDER'], exist_ok=True)
 
+    # 添加禁止缓存的响应头
+    @app.after_request
+    def add_no_cache_headers(response):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '-1'
+        return response
+
     return app
 
 

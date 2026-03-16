@@ -29,7 +29,8 @@
 11、会强制重新构建镜像，应用新的基础镜像：docker-compose up -d --build
     重启某个容器指令：docker-compose restart celery_worker
     docker-compose restart backend celery_worker
-    查看日志：docker-compose logs celery_worker --tail=200
+    查看日志前端：docker-compose logs celery_worker --tail=200
+    查看日志后端：docker-compose logs backend
 12、所有状态ok：
 (.venv) PS D:\pro\pro\other_pro\python\patent_quality_system> docker-compose up -d
 [+] up 7/7
@@ -43,7 +44,8 @@
 
  12.1：1. 初始化数据库（创建表结构）
 由于容器是新创建的，数据库还没有表。需要先创建所有表，并添加一个管理员用户。
-打开命令行（在项目根目录），执行以下命令进入 Flask shell：docker-compose exec backend flask shell
+打开命令行（在项目根目录），执行以下命令进入 Flask shell：
+docker-compose exec backend flask shell
 
 进入 Python 交互环境后，依次执行：
 from app import db
