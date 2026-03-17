@@ -1,6 +1,7 @@
 services:
   mysql:
-    image: mysql:8.0.45
+    image: mysql:latest
+#    command: --innodb_force_recovery=1
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
       MYSQL_DATABASE: patent_quality

@@ -24,15 +24,21 @@
 6、代码生成 Fernet 密钥：python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 7、代码生成 SECRET_KEY : python -c "import secrets; print(secrets.token_hex(32))"
 8、安装requirements.txt：pip install -r requirements.txt
-9、检查所有容器的运行状态：docker-compose ps
-10、 停止并移除旧容器，避免冲突：docker-compose down
-11、会强制重新构建镜像，应用新的基础镜像：docker-compose up -d --build
-    重启某个容器指令：docker-compose restart celery_worker
-    docker-compose restart backend celery_worker
-    查看日志前端：docker-compose logs celery_worker --tail=200
-    查看日志后端：docker-compose logs backend
-12、所有状态ok：
-(.venv) PS D:\pro\pro\other_pro\python\patent_quality_system> docker-compose up -d
+9、docker 常用指令：
+检查所有容器的运行状态：docker-compose ps
+停止并移除旧容器，避免冲突：docker-compose down
+会强制重新构建镜像，应用新的基础镜像：docker-compose up -d --build
+启动所有容器：docker-compose up -d
+只启动某一个容器：docker-compose up -d mysql
+重启某个容器指令：docker-compose restart celery_worker
+                docker-compose restart backend celery_worker
+查看日志前端：docker-compose logs celery_worker --tail=200
+查看日志后端：docker-compose logs backend
+检查容器内模板文件是否存在：docker-compose exec backend ls /app/frontend/templates
+
+10、所有状态ok：
+启动容器： docker-compose up -d
+状态：
 [+] up 7/7
  ✔ Network patent_quality_system_patent-network    Created                                                                                                                                                                                                                                                  0.0ss
  ✔ Container patent_quality_system-dedoc-1         Healthy                                                                                                                                                                                                                                                  30.8s
@@ -42,39 +48,25 @@
  ✔ Container patent_quality_system-backend-1       Started                                                                                                                                                                                                                                                  31.6s
  ✔ Container patent_quality_system-nginx-1         Started
 
- 12.1：1. 初始化数据库（创建表结构）
+ 10.1：
+1. 初始化数据库（创建表结构）
 由于容器是新创建的，数据库还没有表。需要先创建所有表，并添加一个管理员用户。
 打开命令行（在项目根目录），执行以下命令进入 Flask shell：
 docker-compose exec backend flask shell
 
-进入 Python 交互环境后，依次执行：
+2.进入 Python 交互环境后，依次执行：
 from app import db
 from app.models import User
 from werkzeug.security import generate_password_hash
-
-# 创建所有表
 db.create_all()
-
-# 创建管理员用户（用户名/密码可自定义）
-admin = User(
-    username='admin',
-    password_hash=generate_password_hash('admin123'),
-    role='admin'
-)
+admin = User(username='admin', password_hash=generate_password_hash('admin123'), role='admin')
 db.session.add(admin)
 db.session.commit()
 
 # 退出
 exit()
 
-12.2 访问前端界面
-打开浏览器，访问：http://localhost:8080，如果从其他机器访问，将 localhost 替换为服务器 IP。
-
-停止删除旧容器：docker-compose down
-重新构建镜像：docker-compose up -d --build
-检查容器内模板文件是否存在：docker-compose exec backend ls /app/frontend/templates
-
-13.修改数据库字段类型:
+10.2.修改数据库字段类型:
 进入终端输入:
 docker ps
 docker exec -it <容器名> mysql -uroot -p patent_quality  然后输入mysql密码
@@ -83,4 +75,30 @@ docker exec -it <容器名> mysql -uroot -p patent_quality  然后输入mysql密
 修改字段类型：ALTER TABLE patent_documents MODIFY parsed_json LONGTEXT;
 验证修改结果：DESCRIBE patent_documents;
 退出 MySQL：输入 exit 退出 MySQL 客户端。
-重启 Celery Worker：docker-compose restart celery_worker
+
+10.3 修改管理员的用户名或密码：
+1.进入 Flask shell：
+docker-compose exec backend flask shell
+
+2.查询管理员用户并修改：
+from app.models import User
+from werkzeug.security import generate_password_hash
+
+# 假设原用户名为 admin
+admin = User.query.filter_by(username='admin').first()
+if admin:
+    # 修改用户名
+    admin.username = 'new_admin'
+    # 修改密码（需要重新哈希）
+    admin.password_hash = generate_password_hash('new_password')
+    db.session.commit()
+    print('管理员信息已更新')
+else:
+    print('用户不存在')
+
+3.退出：
+exit()
+
+11、 访问前端界面
+打开浏览器，访问：http://localhost:8888，如果从其他机器访问，将 localhost 替换为服务器 IP。
+
