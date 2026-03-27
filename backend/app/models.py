@@ -54,17 +54,19 @@ class QualityCheckResult(db.Model):
     rule_version_id = db.Column(db.Integer, db.ForeignKey('rule_versions.id'))
     result_json = db.Column(db.Text)
     report_path = db.Column(db.String(500))
-    revised_doc_path = db.Column(db.String(500))  # 新增：修订版文档路径
+    revised_doc_path = db.Column(db.String(500))
     check_time = db.Column(db.DateTime, default=datetime.utcnow)
 
     parent = db.relationship('QualityCheckResult', remote_side=[id], backref='children')
+    rule_version = db.relationship('RuleVersion', backref='quality_check_results')  # 新增
 
 class RuleVersion(db.Model):
     __tablename__ = 'rule_versions'
     id = db.Column(db.Integer, primary_key=True)
     version = db.Column(db.String(50), unique=True)
+    name = db.Column(db.String(100), nullable=False, default='')  # 新增：规则名称
     description = db.Column(db.String(200))
-    rules_file_path = db.Column(db.String(500))   # 加密文件存储路径
+    rules_file_path = db.Column(db.String(500))
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)

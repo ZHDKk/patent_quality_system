@@ -68,7 +68,8 @@ nav {
 }
 
 .nav-wrapper {
-  max-width: 1400px;
+  width: 95%;
+  max-width: none;
   margin: 0 auto;
   display: flex;
   justify-content: space-between;
@@ -138,7 +139,8 @@ nav a:hover::after {
 
 /* 主内容区 - 悬浮玻璃卡片 */
 main {
-  max-width: 1400px;
+  width: 95%;
+  max-width: none;
   margin: 2rem auto;
   padding: 2rem;
   background: var(--card-bg);
@@ -598,4 +600,12 @@ hr {
 
 ::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(135deg, var(--accent), var(--primary));
+}
+
+.btn-warning {
+    background: linear-gradient(135deg, #ffc107, #e0a800);
+    color: #212529;
+}
+.btn-warning:hover {
+    background: linear-gradient(135deg, #ffcd39, #d39e00);
 }

@@ -4,15 +4,23 @@
 
 <h3>上传新规则</h3>
 <form id="ruleUploadForm" enctype="multipart/form-data" method="post">
-    <div>
-        <label>规则文件 (.xlsx):</label>
-        <input type="file" name="rule_file" accept=".xlsx" required>
+    <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+        <div style="flex: 1;">
+            <label>规则名称:</label>
+            <input type="text" name="rule_name" required placeholder="例如：专利格式规则 v1.0" style="width: 100%;">
+        </div>
+        <div style="flex: 1;">
+            <label>版本描述:</label>
+            <input type="text" name="description" style="width: 100%;">
+        </div>
     </div>
-    <div>
-        <label>版本描述:</label>
-        <input type="text" name="description">
+    <div style="display: flex; align-items: center; gap: 1rem;">
+        <div style="flex: 1;">
+            <label>规则文件 (.xlsx):</label>
+            <input type="file" name="rule_file" accept=".xlsx" required>
+        </div>
+        <button type="submit" class="btn btn-primary" id="ruleUploadBtn" style="white-space: nowrap; margin-top: 1.5rem;">上传并激活</button>
     </div>
-    <button type="submit" class="btn btn-primary" id="ruleUploadBtn">上传并激活</button>
     <div id="ruleUploadLoading" style="display:none; margin-top:1rem;"><span class="spinner"></span> 上传中...</div>
 </form>
 
@@ -21,6 +29,7 @@
     <thead>
         <tr>
             <th>版本</th>
+            <th>规则名称</th>
             <th>描述</th>
             <th>创建时间</th>
             <th>创建人</th>
@@ -32,6 +41,7 @@
         {% for v in versions %}
         <tr>
             <td>{{ v.version }}</td>
+             <td>{{ v.name }}</td>      <!-- 显示规则名称 -->
             <td>{{ v.description }}</td>
             <td>{{ v.created_at }}</td>
             <td>{{ v.creator.username }}</td>

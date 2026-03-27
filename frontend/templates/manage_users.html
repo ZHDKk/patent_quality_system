@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>用户管理</h2>
+
 <a href="{{ url_for('auth.register') }}" class="btn btn-primary" style="margin-bottom:1rem;">创建新用户</a>
+
 <table>
     <thead>
         <tr>
@@ -31,6 +33,7 @@
                 {% if user.role != 'admin' %}
                 <a href="{{ url_for('main.edit_user', user_id=user.id) }}" class="btn btn-secondary btn-sm">编辑</a>
                 <a href="{{ url_for('main.user_results', user_id=user.id) }}" class="btn btn-info btn-sm" target="_blank">查看结果</a>
+                <button class="btn btn-warning btn-sm" onclick="resetPassword({{ user.id }}, '{{ user.username }}')">重置密码</button>
                 {% endif %}
                 {% if current_user.id != user.id %}
                 <button class="btn btn-danger btn-sm" onclick="deleteUser({{ user.id }})">删除</button>
@@ -42,8 +45,18 @@
 </table>
 
 <style>
+.btn-sm { padding: 0.25rem 0.5rem; font-size: 0.875rem; }
 .btn-info { background-color: #17a2b8; color: white; }
 .btn-info:hover { background-color: #138496; }
+.btn-warning {
+    background: linear-gradient(135deg, #ffc107, #e0a800);
+    color: #212529;
+}
+.btn-warning:hover {
+    background: linear-gradient(135deg, #ffcd39, #d39e00);
+}
+.btn-danger { background: #dc3545; color: white; }
+.btn-danger:hover { background: #c82333; }
 </style>
 
 <script>
@@ -59,6 +72,28 @@ function deleteUser(userId) {
             }
         })
         .catch(err => alert('删除失败: ' + err));
+}
+
+function resetPassword(userId, username) {
+    let newPassword = prompt(`请输入为用户 "${username}" 设置的新密码：`);
+    if (newPassword && newPassword.trim() !== '') {
+        fetch(`/api/user/${userId}/reset_password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: newPassword })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert('密码重置成功！');
+            } else {
+                alert('重置失败：' + (data.error || '未知错误'));
+            }
+        })
+        .catch(err => alert('请求失败：' + err));
+    } else if (newPassword === '') {
+        alert('密码不能为空');
+    }
 }
 </script>
 {% endblock %}

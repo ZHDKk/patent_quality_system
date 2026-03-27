@@ -6,13 +6,52 @@ from .models import db, RuleVersion
 from flask import current_app
 
 class RuleEngine:
-    def __init__(self, key=None):
+    def __init__(self, key=None, version_id=None):
         self.key = key or os.environ.get('RULE_ENCRYPT_KEY')
         self.cipher = Fernet(self.key.encode() if isinstance(self.key, str) else self.key)
         self.current_rules = []
         self.current_version_id = None
-        self.cases = []  # 存储案例库
-        self.load_latest_rules()
+        self.cases = []
+        if version_id:
+            self.load_rules_by_version(version_id)
+        else:
+            self.load_latest_rules()
+
+    def load_rules_by_version(self, version_id):
+        """根据版本ID加载规则和案例库"""
+        from .models import RuleVersion  # 避免循环导入
+        rule_version = RuleVersion.query.get(version_id)
+        if not rule_version:
+            raise ValueError(f"规则版本 {version_id} 不存在")
+
+        try:
+            with open(rule_version.rules_file_path, 'rb') as f:
+                encrypted = f.read()
+            decrypted = self.cipher.decrypt(encrypted)
+            temp_path = './rules_temp.xlsx'
+            with open(temp_path, 'wb') as f:
+                f.write(decrypted)
+
+            excel_file = pd.ExcelFile(temp_path)
+            if '规则库' in excel_file.sheet_names:
+                df_rules = pd.read_excel(temp_path, sheet_name='规则库')
+                self.current_rules = df_rules.to_dict('records')
+            else:
+                self.current_rules = []
+
+            if '案例库' in excel_file.sheet_names:
+                df_cases = pd.read_excel(temp_path, sheet_name='案例库')
+                self.cases = df_cases.to_dict('records')
+            else:
+                self.cases = []
+
+            os.remove(temp_path)
+            self.current_version_id = rule_version.id
+        except Exception as e:
+            current_app.logger.error(f"加载规则版本 {version_id} 失败: {e}")
+            self.current_rules = []
+            self.cases = []
+            self.current_version_id = None
 
     def load_latest_rules(self):
         """从数据库加载最新激活的规则版本（包含规则库和案例库）"""
@@ -125,7 +164,7 @@ class RuleEngine:
             })
         return meta
 
-    def update_rules(self, excel_file_path, description, user_id):
+    def update_rules(self, excel_file_path, description, user_id, rule_name=''):
         """更新规则：加密并保存为新版本，同时将之前版本设为非激活"""
         # 读取原始 Excel 验证格式（至少要有“规则库”sheet）
         excel_file = pd.ExcelFile(excel_file_path)
@@ -152,6 +191,7 @@ class RuleEngine:
         # 创建新规则版本
         new_version = RuleVersion(
             version=version,
+            name=rule_name,  # 新增
             description=description,
             rules_file_path=store_path,
             created_by=user_id,

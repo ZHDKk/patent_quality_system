@@ -1,4 +1,5 @@
 1、安装Docker：https://www.docker.com/products/docker-desktop/
+    安装tailscale: https://login.tailscale.com ,使用Tailscale 做内网穿透(免费\不限速),在宿主机安装 Tailscale:根据系统选择安装方式安装，完成之后使用注册账号并登录。所有的使用者都用同一个主账号登录
 2、Docker 汉化：https://github.com/asxez/DockerDesktop-CN/releases
 3、Docker 镜像：
 {
@@ -19,10 +20,11 @@
     "https://docker.1ms.run"
   ]
 }
-4、Docker安装mysql：docker pull mysql:8.0.45
-5、Docker 运行mysql：docker run --name mysql-local -p 3306:3306 -e MYSQL_ROOT_PASSWORD=zhdk123 -d mysql:8.0.45
+4、Docker安装mysql：docker pull mysql:8.0.45 (用不到)
+5、Docker 运行mysql：docker run --name mysql-local -p 3306:3306 -e MYSQL_ROOT_PASSWORD=zhdk123 -d mysql:8.0.45 (用不到)
 6、代码生成 Fernet 密钥：python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 7、代码生成 SECRET_KEY : python -c "import secrets; print(secrets.token_hex(32))"
+    生成 RULE_ENCRYPT_KEY 的方法（Linux/Mac/WSL）：openssl rand -base64 32
 8、安装requirements.txt：pip install -r requirements.txt
 9、docker 常用指令：
 检查所有容器的运行状态：docker-compose ps
@@ -99,6 +101,37 @@ else:
 3.退出：
 exit()
 
+10.4 执行数据库迁移：
+    1. 确保容器正在运行：docker-compose up -d
+    2.进入后端容器：docker-compose exec backend bash
+    3.在容器内执行迁移：flask db upgrade
+    4.完整的容器内迁移流程：
+        # 进入容器
+        docker-compose exec backend bash
+
+        # 确认当前目录
+        pwd  # 应该是 /app
+
+        # 如果 migrations 文件夹不存在，先初始化（确保数据库连接正常）
+        flask db init
+
+        # 生成迁移脚本（如果模型有变化）
+        flask db migrate -m "add name to rule_name"
+
+        # 执行升级
+        flask db upgrade
+
+        # 退出容器
+        exit
+
+10.5 停止并删除所有容器、网络、卷（谨慎）:停止并删除所有容器、网络、卷: docker-compose down -v
+
 11、 访问前端界面
 打开浏览器，访问：http://localhost:8888，如果从其他机器访问，将 localhost 替换为服务器 IP。
 
+12、Docker使用花生壳做内网穿透：
+12.1、拉取花生壳镜像：docker load -i ./phddns_docker.tar
+12.2：查看镜像信息：docker images
+12.3： 在运行：docker-compose up -d --build
+12.4：查看花生壳SN码：docker exec phddns phddns status
+12.5：记录下输出的 SN 码，然后访问 花生壳管理平台（https://console.hsk.oray.com/zh/passport/login），用该 SN 码和默认密码 admin 登录

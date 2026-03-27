@@ -16,7 +16,6 @@
     <p style="color: var(--text-secondary);" id="upload-time" data-upload="{{ doc.upload_time.isoformat() }}">上传时间: 加载中...</p>
 </div>
 
-<!-- 操作按钮区 -->
 <div id="action-buttons" style="margin-bottom: 1rem; display: flex; gap: 1rem;">
     {% if results and results[0] %}
         {% if results[0].revised_doc_path %}
@@ -28,16 +27,12 @@
     {% endif %}
 </div>
 
-<!-- 问题表格容器 -->
 <div id="issues-table-container">
     <p>加载中...</p>
 </div>
-
-<!-- 分页控件 -->
 <div id="pagination" class="pagination"></div>
 
 <style>
-/* 表格样式（保留原样） */
 .issues-table {
     width: 100%;
     border-collapse: collapse;
@@ -56,10 +51,6 @@
     background: rgba(30, 41, 59, 0.8);
     font-weight: 600;
 }
-.issues-table td {
-    word-break: break-word;
-}
-/* 分页样式 */
 .pagination {
     margin-top: 2rem;
     display: flex;
@@ -75,19 +66,9 @@
     color: var(--text-primary);
     background: rgba(15,23,42,0.5);
 }
-.pagination a:hover {
-    background: rgba(255,255,255,0.1);
-}
-.pagination span.current {
-    background: var(--primary);
-    color: white;
-    border-color: var(--primary);
-}
-.pagination span.ellipsis {
-    padding: 0.5rem 0.8rem;
-    color: var(--text-secondary);
-}
-/* 旋转动画 */
+.pagination a:hover { background: rgba(255,255,255,0.1); }
+.pagination span.current { background: var(--primary); color: white; border-color: var(--primary); }
+.pagination span.ellipsis { padding: 0.5rem 0.8rem; color: var(--text-secondary); }
 .spinner {
     display: inline-block;
     width: 1rem;
@@ -101,7 +82,6 @@
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
-/* 按钮颜色 */
 .btn-info { background-color: #17a2b8; color: white; }
 .btn-info:hover { background-color: #138496; }
 .btn-success { background-color: #28a745; color: white; }
@@ -109,14 +89,10 @@
 </style>
 
 <script>
-// 从后端传递的数据
 const results = {{ results|tojson }};
 const docUploadTime = "{{ doc.upload_time.isoformat() }}";
-
-// 格式化上传时间
 document.getElementById('upload-time').textContent = `上传时间: ${new Date(docUploadTime).toLocaleString()}`;
 
-// ==================== 表格渲染（保持不变） ====================
 let allIssues = [];
 try {
     if (results && results.length > 0) {
@@ -124,6 +100,7 @@ try {
             const version = res.version;
             const checkTime = new Date(res.check_time).toLocaleString();
             const resultJson = res.result_json;
+            const ruleName = res.rule_name || '';
 
             function addIssue(issue) {
                 allIssues.push({
@@ -132,7 +109,8 @@ try {
                     rule_id: issue.rule_id || '',
                     issue: issue.issue || issue.description || '',
                     suggestion: issue.suggestion || '',
-                    severity: issue.severity || '提示'
+                    severity: issue.severity || '提示',
+                    rule_name: ruleName
                 });
             }
 
@@ -149,7 +127,8 @@ try {
                         issue: '',
                         suggestion: '',
                         severity: '信息',
-                        raw: resultJson.raw_output
+                        raw: resultJson.raw_output,
+                        rule_name: ruleName
                     });
                 }
             }
@@ -159,7 +138,6 @@ try {
     console.error('解析结果时出错:', e);
 }
 
-// 分页配置
 const itemsPerPage = 10;
 let currentPage = 1;
 
@@ -178,21 +156,22 @@ function renderTable(page) {
     const start = (page - 1) * itemsPerPage;
     const end = start + itemsPerPage;
     const pageIssues = allIssues.slice(start, end);
-
     const container = document.getElementById('issues-table-container');
     if (allIssues.length === 0) {
         container.innerHTML = '<p>暂无质检结果</p>';
         document.getElementById('pagination').innerHTML = '';
         return;
     }
-
-    let tableHtml = '<table class="issues-table"><thead><tr><th>版本</th><th>规则ID</th><th>问题描述</th><th>建议</th><th>严重程度</th></tr></thead><tbody>';
+    let tableHtml = '<table class="issues-table"><thead><tr>' +
+        '<th>版本</th><th>规则版本</th><th>规则ID</th><th>问题描述</th><th>建议</th><th>严重程度</th>' +
+        '</tr></thead><tbody>';
     pageIssues.forEach(issue => {
         if (issue.rule_id === '原始输出') {
-            tableHtml += `<tr><td colspan="5"><div class="raw-output">${escapeHtml(issue.raw)}</div></td></tr>`;
+            tableHtml += `<tr><td colspan="6"><div class="raw-output">${escapeHtml(issue.raw)}</div></td></tr>`;
         } else {
             tableHtml += `<tr>
                 <td>${escapeHtml(issue.version)}</td>
+                <td>${escapeHtml(issue.rule_name)}</td>
                 <td>${escapeHtml(issue.rule_id)}</td>
                 <td>${escapeHtml(issue.issue)}</td>
                 <td>${escapeHtml(issue.suggestion)}</td>
@@ -241,18 +220,14 @@ function renderPagination() {
 
 renderTable(1);
 
-// ==================== 生成修订版文档逻辑（优化版） ====================
 const generateBtn = document.getElementById('generateRevisedBtn');
 if (generateBtn) {
     generateBtn.addEventListener('click', async function() {
         const resultId = this.dataset.resultId;
         const msgDiv = document.getElementById('generatingMsg');
         const actionDiv = document.getElementById('action-buttons');
-
-        // 隐藏生成按钮，显示加载中
         this.style.display = 'none';
         msgDiv.style.display = 'block';
-
         try {
             const response = await fetch(`/api/result/${resultId}/generate_revised`, {
                 method: 'POST',
@@ -260,7 +235,6 @@ if (generateBtn) {
             });
             const data = await response.json();
             if (data.status === 'success') {
-                // 移除加载中，添加下载链接
                 msgDiv.style.display = 'none';
                 const downloadLink = document.createElement('a');
                 downloadLink.href = `/download/revised/${resultId}`;
@@ -269,7 +243,6 @@ if (generateBtn) {
                 actionDiv.appendChild(downloadLink);
             } else {
                 alert('生成失败：' + (data.error || '未知错误'));
-                // 恢复生成按钮
                 this.style.display = 'inline-block';
                 msgDiv.style.display = 'none';
             }

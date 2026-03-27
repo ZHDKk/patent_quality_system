@@ -7,6 +7,7 @@ import uuid
 from flask import Blueprint, request, jsonify, render_template, current_app, flash, redirect, url_for, make_response, \
     send_file
 from flask_login import login_required, current_user
+from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime
 from .models import db, PatentDocument, QualityCheckResult, OperationLog, RuleVersion, User
@@ -61,7 +62,17 @@ def upload():
             parse_mode = request.form.get('parse_mode', 'local')
             model = request.form.get('model', 'kimi-k2-turbo-preview')
 
-            process_patent_document.delay(doc.id, is_recheck, parent_id, parse_mode, model)
+            # 获取用户选择的规则版本ID
+            rule_version_id = request.form.get('rule_version_id')
+            if rule_version_id:
+                # 验证版本是否存在
+                rule_version = RuleVersion.query.get(rule_version_id)
+                if not rule_version:
+                    return jsonify({'error': '无效的规则版本'}), 400
+            else:
+                rule_version_id = None  # 使用最新激活版本
+
+            process_patent_document.delay(doc.id, is_recheck, parent_id, parse_mode, model, rule_version_id)
 
             return jsonify({'status': 'success', 'doc_id': doc.id})
         else:
@@ -117,9 +128,21 @@ def batch_upload():
 
     db.session.commit()
 
+    parse_mode = request.form.get('parse_mode', 'local')
+    model = request.form.get('model', 'kimi-k2-turbo-preview')
+    rule_version_id = request.form.get('rule_version_id')  # 获取
+
+    # 验证规则版本
+    if rule_version_id:
+        rule_version = RuleVersion.query.get(rule_version_id)
+        if not rule_version:
+            return jsonify({'error': '无效的规则版本'}), 400
+    else:
+        rule_version_id = None
+
     # 触发 Celery 任务
     for doc_id in doc_ids:
-        process_patent_document.delay(doc_id, parse_mode=parse_mode, model=model)
+        process_patent_document.delay(doc_id, parse_mode=parse_mode, model=model, rule_version_id=rule_version_id)
 
     return jsonify({
         'status': 'success',
@@ -164,7 +187,8 @@ def view_result(doc_id):
             'version': res.version,
             'check_time': res.check_time.isoformat(),
             'result_json': result_content,
-            'revised_doc_path': res.revised_doc_path
+            'revised_doc_path': res.revised_doc_path,
+            'rule_name': res.rule_version.name if res.rule_version else ''  # 新增
         })
 
     # 判断是否需要显示返回特定用户列表的链接
@@ -222,9 +246,10 @@ def manage_rules():
             file.save(temp_path)
 
             description = request.form.get('description', '')
+            rule_name = request.form.get('rule_name', '')  # 获取规则名称
             engine = RuleEngine()
             try:
-                engine.update_rules(temp_path, description, current_user.id)
+                engine.update_rules(temp_path, description, current_user.id, rule_name)
                 flash('规则已更新')
             except Exception as e:
                 flash(f'更新失败: {str(e)}')
@@ -510,3 +535,31 @@ def delete_rule_version(version_id):
         flash(f'删除失败: {str(e)}', 'error')
 
     return redirect(url_for('main.manage_rules'))
+
+@main_bp.route('/api/rule_versions')
+@login_required
+def api_rule_versions():
+    """获取所有规则版本，用于前端下拉框"""
+    versions = RuleVersion.query.order_by(RuleVersion.created_at.desc()).all()
+    data = [{
+        'id': v.id,
+        'version': v.version,
+        'description': v.description,
+        'created_at': v.created_at.isoformat(),
+        'is_active': v.is_active
+    } for v in versions]
+    return jsonify(data)
+
+@main_bp.route('/api/user/<int:user_id>/reset_password', methods=['POST'])
+@login_required
+@admin_required
+def reset_password(user_id):
+    """管理员重置用户密码"""
+    user = User.query.get_or_404(user_id)
+    data = request.get_json()
+    new_password = data.get('password')
+    if not new_password:
+        return jsonify({'error': '密码不能为空'}), 400
+    user.password_hash = generate_password_hash(new_password)
+    db.session.commit()
+    return jsonify({'status': 'success'})

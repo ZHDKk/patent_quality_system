@@ -19,8 +19,8 @@ celery.conf.update(
 
 @celery.task(bind=True, max_retries=3)
 def process_patent_document(self, doc_id, is_recheck=False, parent_result_id=None,
-                            parse_mode='local', model='kimi-k2-turbo-preview'):
-    """异步处理单个专利文档"""
+                            parse_mode='local', model='kimi-k2-turbo-preview', rule_version_id=None):
+    """异步处理单个专利文档，支持指定规则版本"""
     from . import create_app
     app = create_app()
     with app.app_context():
@@ -28,15 +28,21 @@ def process_patent_document(self, doc_id, is_recheck=False, parent_result_id=Non
         if not doc:
             return
 
-        # 确保状态为 processing（重试时可能已是 processing）
+        # 确保状态为 processing
         if doc.status != 'processing':
             doc.status = 'processing'
             db.session.commit()
 
         try:
-            # 获取最新规则版本
-            rule_engine = RuleEngine()
+            # 根据 rule_version_id 加载规则引擎
+            if rule_version_id:
+                rule_engine = RuleEngine(version_id=rule_version_id)
+            else:
+                rule_engine = RuleEngine()  # 加载最新激活版本
+
             rule_version_id = rule_engine.current_version_id
+            if not rule_version_id:
+                raise Exception("未找到可用的规则版本")
             rule_version = RuleVersion.query.get(rule_version_id)
             if not rule_version:
                 raise Exception("No active rule version found")

@@ -2,8 +2,9 @@
 {% block content %}
 <h2>上传专利文件</h2>
 
-<!-- 单个文件上传 -->
-<form id="uploadForm" enctype="multipart/form-data">
+<!-- ==================== 公共设置区 ==================== -->
+<div class="common-settings" style="margin-bottom: 2rem; padding: 1rem; background: rgba(15, 25, 45, 0.6); border-radius: 12px; border: 1px solid var(--border-color);">
+    <!-- 文档解析方式放在最上面 -->
     <div class="form-group">
         <label>文档解析方式：</label>
         <div style="display: flex; gap: 1.5rem; margin-top: 0.5rem;">
@@ -11,45 +12,65 @@
             <label><input type="radio" name="parse_mode" value="online"> 在线解析</label>
         </div>
     </div>
-    <div class="form-group">
-        <label>AI模型选择：</label>
-        <select name="model" class="form-control">
-            <option value="kimi-k2-turbo-preview" selected>Kimi (k2-turbo-preview)</option>
-            <option value="moonshot-v1-8k" disabled>Moonshot v1 8K (即将支持)</option>
-        </select>
-    </div>
-    <div class="form-group">
-        <label>选择文件：</label>
-        <input type="file" name="file" accept=".doc,.docx,.pdf" required>
-    </div>
-    <div class="form-group">
-        <label>是否为二次质检？</label>
-        <div style="display: flex; gap: 1.5rem; margin-top: 0.5rem;">
-            <label><input type="radio" name="is_recheck" value="no" checked> 首次提交</label>
-            <label><input type="radio" name="is_recheck" value="yes"> 基于上次结果修改</label>
+
+    <!-- AI模型选择和选择质检规则库放在同一行 -->
+    <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+        <div class="form-group" style="flex: 1;">
+            <label>AI模型选择：</label>
+            <select name="model" id="modelSelect" class="form-control">
+                <option value="kimi-k2-turbo-preview" selected>Kimi (k2-turbo-preview)</option>
+                <option value="moonshot-v1-8k" disabled>Moonshot v1 8K (即将支持)</option>
+            </select>
+        </div>
+        <div class="form-group" style="flex: 1;">
+            <label>选择质检规则库：</label>
+            <select id="ruleVersionSelect" class="form-control">
+                <option value="">使用最新激活规则</option>
+            </select>
         </div>
     </div>
-    <div id="recheckOptions" style="display:none;">
-        <label>选择上次质检结果：</label>
-        <select name="parent_result_id" class="form-control">
-            {% for doc in recent_docs %}
-                {% if doc.results %}
-                    <optgroup label="{{ doc.filename }}">
-                    {% for res in doc.results %}
-                        <option value="{{ res.id }}">版本{{ res.version }} ({{ res.check_time }})</option>
-                    {% endfor %}
-                    </optgroup>
-                {% endif %}
-            {% endfor %}
-        </select>
-    </div>
-    <button type="submit" class="btn btn-primary" id="singleUploadBtn">开始质检</button>
-    <div id="singleLoading" style="display:none; margin-top:1rem;"><span class="spinner"></span> 上传中...</div>
-</form>
+</div>
 
-<!-- 批量上传区域 -->
-<h3>批量上传</h3>
-<div id="batchUploadArea">
+<!-- ==================== Tab 导航 ==================== -->
+<div class="tab-navigation" style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color);">
+    <button id="tabSingleBtn" class="tab-btn active" data-tab="single">单个上传</button>
+    <button id="tabBatchBtn" class="tab-btn" data-tab="batch">批量上传</button>
+</div>
+
+<!-- ==================== Tab 内容区 ==================== -->
+<div id="singleUploadPanel" class="tab-panel active">
+    <form id="uploadForm" enctype="multipart/form-data">
+        <div class="form-group">
+            <label>选择文件：</label>
+            <input type="file" name="file" accept=".doc,.docx,.pdf" required>
+        </div>
+        <div class="form-group">
+            <label>是否为二次质检？</label>
+            <div style="display: flex; gap: 1.5rem; margin-top: 0.5rem;">
+                <label><input type="radio" name="is_recheck" value="no" checked> 首次提交</label>
+                <label><input type="radio" name="is_recheck" value="yes"> 基于上次结果修改</label>
+            </div>
+        </div>
+        <div id="recheckOptions" style="display:none;">
+            <label>选择上次质检结果：</label>
+            <select name="parent_result_id" class="form-control">
+                {% for doc in recent_docs %}
+                    {% if doc.results %}
+                        <optgroup label="{{ doc.filename }}">
+                        {% for res in doc.results %}
+                            <option value="{{ res.id }}">版本{{ res.version }} ({{ res.check_time }})</option>
+                        {% endfor %}
+                        </optgroup>
+                    {% endif %}
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary" id="singleUploadBtn">开始质检</button>
+        <div id="singleLoading" style="display:none; margin-top:1rem;"><span class="spinner"></span> 上传中...</div>
+    </form>
+</div>
+
+<div id="batchUploadPanel" class="tab-panel">
     <div class="form-group">
         <label>选择多个文件：</label>
         <input type="file" id="batchFileInput" multiple accept=".doc,.docx,.pdf">
@@ -60,148 +81,252 @@
     <div id="batchLoading" style="display:none; margin-top:1rem;"><span class="spinner"></span> 批量上传中...</div>
 </div>
 
+<style>
+    /* Tab 样式 */
+    .tab-btn {
+        background: none;
+        border: none;
+        padding: 0.75rem 1.5rem;
+        font-size: 1rem;
+        font-weight: 500;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+    }
+    .tab-btn.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+        background: none;
+        box-shadow: none;
+    }
+    .tab-btn:hover:not(.active) {
+        color: var(--text-primary);
+        background: rgba(0, 229, 255, 0.05);
+    }
+    .tab-panel {
+        display: none;
+    }
+    .tab-panel.active {
+        display: block;
+        animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .btn-danger {
+        background: linear-gradient(135deg, #FF3B6F, #C2185B);
+    }
+    .btn-danger:hover {
+        background: linear-gradient(135deg, #FF1F5A, #A0144A);
+    }
+    .spinner {
+        display: inline-block;
+        width: 1rem;
+        height: 1rem;
+        border: 2px solid rgba(255,255,255,.3);
+        border-radius: 50%;
+        border-top-color: var(--primary);
+        animation: spin 1s ease-in-out infinite;
+        margin-right: 0.5rem;
+    }
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+
 <script>
-document.querySelectorAll('input[name="is_recheck"]').forEach(radio => {
-    radio.addEventListener('change', function() {
-        document.getElementById('recheckOptions').style.display = this.value === 'yes' ? 'block' : 'none';
-    });
-});
+    // ==================== 公共变量 ====================
+    let selectedFiles = []; // 批量上传文件列表
 
-// 单文件上传
-document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = document.getElementById('singleUploadBtn');
-    const loading = document.getElementById('singleLoading');
-    btn.disabled = true;
-    loading.style.display = 'block';
-    const formData = new FormData(e.target);
-    try {
-        const response = await fetch('/upload', { method: 'POST', body: formData });
-        const result = await response.json();
-        if (result.error) {
-            alert('错误：' + result.error);
+    // ==================== Tab 切换 ====================
+    const tabSingleBtn = document.getElementById('tabSingleBtn');
+    const tabBatchBtn = document.getElementById('tabBatchBtn');
+    const singlePanel = document.getElementById('singleUploadPanel');
+    const batchPanel = document.getElementById('batchUploadPanel');
+
+    function switchTab(tabName) {
+        if (tabName === 'single') {
+            tabSingleBtn.classList.add('active');
+            tabBatchBtn.classList.remove('active');
+            singlePanel.classList.add('active');
+            batchPanel.classList.remove('active');
         } else {
-            alert('上传成功，任务ID：' + result.doc_id);
-            window.location.href = '/results';
+            tabBatchBtn.classList.add('active');
+            tabSingleBtn.classList.remove('active');
+            batchPanel.classList.add('active');
+            singlePanel.classList.remove('active');
         }
-    } catch (err) {
-        alert('上传失败：' + err);
-    } finally {
-        btn.disabled = false;
-        loading.style.display = 'none';
-    }
-});
-
-// ==================== 批量上传逻辑 ====================
-let selectedFiles = []; // 存储 { file, name, size, error? }
-
-const fileInput = document.getElementById('batchFileInput');
-const addBtn = document.getElementById('addFilesBtn');
-const fileListDiv = document.getElementById('fileList');
-const batchUploadBtn = document.getElementById('batchUploadBtn');
-const batchLoading = document.getElementById('batchLoading');
-
-function renderFileList() {
-    if (selectedFiles.length === 0) {
-        fileListDiv.innerHTML = '<p style="color: var(--text-secondary);">暂无文件</p>';
-        batchUploadBtn.disabled = true;
-        return;
-    }
-    let html = '<ul style="list-style:none; padding:0;">';
-    selectedFiles.forEach((f, index) => {
-        html += `<li style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; border: 1px solid var(--border-color); margin-bottom:0.3rem; border-radius:4px;">
-            <span>${f.name} (${(f.size/1024).toFixed(2)} KB) ${f.error ? '<span style="color:red;">文件类型错误</span>' : ''}</span>
-            <button type="button" class="btn btn-danger btn-sm" onclick="removeFile(${index})">删除</button>
-        </li>`;
-    });
-    html += '</ul>';
-    fileListDiv.innerHTML = html;
-    batchUploadBtn.disabled = selectedFiles.some(f => f.error) || selectedFiles.length === 0;
-}
-
-window.removeFile = function(index) {
-    selectedFiles.splice(index, 1);
-    renderFileList();
-};
-
-addBtn.addEventListener('click', () => {
-    const files = Array.from(fileInput.files);
-    const allowed = ['doc','docx','pdf'];
-    files.forEach(file => {
-        const ext = file.name.split('.').pop().toLowerCase();
-        const error = !allowed.includes(ext);
-        selectedFiles.push({ file, name: file.name, size: file.size, error });
-    });
-    fileInput.value = ''; // 清空input
-    renderFileList();
-});
-
-batchUploadBtn.addEventListener('click', async () => {
-    if (selectedFiles.length === 0) return;
-    console.log('所有选中文件:', selectedFiles.map(f => f.name));
-    console.log('有效文件数:', selectedFiles.filter(f => !f.error).length);
-    console.log('FormData 中的文件列表:');
-    const testFormData = new FormData();
-    selectedFiles.filter(f => !f.error).forEach(f => testFormData.append('files', f.file));
-    for (let pair of testFormData.entries()) {
-        console.log(pair[0], pair[1].name);
     }
 
-    const formData = new FormData();
-    const validFiles = selectedFiles.filter(f => !f.error);
+    tabSingleBtn.addEventListener('click', () => switchTab('single'));
+    tabBatchBtn.addEventListener('click', () => switchTab('batch'));
 
-    if (validFiles.length === 0) {
-        alert('没有可上传的有效文件（请检查文件类型）');
-        return;
+    // ==================== 规则版本加载 ====================
+    async function loadRuleVersions() {
+        try {
+            const response = await fetch('/api/rule_versions');
+            const versions = await response.json();
+            const select = document.getElementById('ruleVersionSelect');
+            select.innerHTML = '<option value="">使用最新激活规则</option>';
+            versions.forEach(v => {
+                const option = document.createElement('option');
+                option.value = v.id;
+                option.textContent = `${v.version} - ${v.description || '无描述'} (${new Date(v.created_at).toLocaleString()})${v.is_active ? '' : ''}`;
+                select.appendChild(option);
+            });
+            // 恢复上次选择
+            const savedVersionId = localStorage.getItem('selectedRuleVersionId');
+            if (savedVersionId) select.value = savedVersionId;
+        } catch (err) {
+            console.error('加载规则版本失败:', err);
+        }
     }
 
-    // 将所有有效文件添加到 FormData
-    validFiles.forEach(f => formData.append('files', f.file));
+    function saveSelectedVersion() {
+        const select = document.getElementById('ruleVersionSelect');
+        const val = select.value;
+        if (val) localStorage.setItem('selectedRuleVersionId', val);
+        else localStorage.removeItem('selectedRuleVersionId');
+    }
 
-    // 添加解析方式和模型
-    const parseMode = document.querySelector('input[name="parse_mode"]:checked').value;
-    const model = document.querySelector('select[name="model"]').value;
-    formData.append('parse_mode', parseMode);
-    formData.append('model', model);
-
-    // 禁用按钮，显示 loading
-    batchUploadBtn.disabled = true;
-    batchLoading.style.display = 'block';
-
-    try {
-        const response = await fetch('/batch_upload', {
-            method: 'POST',
-            body: formData
+    // ==================== 单文件上传 ====================
+    document.querySelectorAll('input[name="is_recheck"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            document.getElementById('recheckOptions').style.display = this.value === 'yes' ? 'block' : 'none';
         });
-        const result = await response.json();
+    });
 
-        if (result.status === 'success') {
-            let message = `✅ 成功提交 ${result.count} 个文件`;
-            if (result.failed && result.failed.length > 0) {
-                message += `，但以下文件失败：\n`;
-                result.failed.forEach(f => {
-                    message += `- ${f.name}: ${f.reason}\n`;
-                });
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('singleUploadBtn');
+        const loading = document.getElementById('singleLoading');
+        btn.disabled = true;
+        loading.style.display = 'block';
+        const formData = new FormData(e.target);
+        // 从公共设置获取解析方式、模型、规则版本
+        const parseMode = document.querySelector('input[name="parse_mode"]:checked').value;
+        const model = document.getElementById('modelSelect').value;
+        const ruleVersionId = document.getElementById('ruleVersionSelect').value;
+        formData.set('parse_mode', parseMode);
+        formData.set('model', model);
+        if (ruleVersionId) formData.set('rule_version_id', ruleVersionId);
+        else formData.delete('rule_version_id');
+        try {
+            const response = await fetch('/upload', { method: 'POST', body: formData });
+            const result = await response.json();
+            if (result.error) {
+                alert('错误：' + result.error);
             } else {
-                message += `，全部成功！`;
+                alert('上传成功，任务ID：' + result.doc_id);
+                window.location.href = '/results';
             }
-            alert(message);
-
-            // 清空文件列表
-            selectedFiles = [];
-            renderFileList();
-
-            // 可选：跳转到结果页
-            window.location.href = '/results';
-        } else {
-            alert('❌ 上传失败：' + (result.error || '未知错误'));
+        } catch (err) {
+            alert('上传失败：' + err);
+        } finally {
+            btn.disabled = false;
+            loading.style.display = 'none';
         }
-    } catch (err) {
-        alert('❌ 批量上传异常：' + err);
-    } finally {
-        batchUploadBtn.disabled = false;
-        batchLoading.style.display = 'none';
+    });
+
+    // ==================== 批量上传 ====================
+    const fileInput = document.getElementById('batchFileInput');
+    const addBtn = document.getElementById('addFilesBtn');
+    const fileListDiv = document.getElementById('fileList');
+    const batchUploadBtn = document.getElementById('batchUploadBtn');
+    const batchLoading = document.getElementById('batchLoading');
+
+    function renderFileList() {
+        if (selectedFiles.length === 0) {
+            fileListDiv.innerHTML = '<p style="color: var(--text-secondary);">暂无文件</p>';
+            batchUploadBtn.disabled = true;
+            return;
+        }
+        let html = '<ul style="list-style:none; padding:0;">';
+        selectedFiles.forEach((f, index) => {
+            html += `<li style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; border: 1px solid var(--border-color); margin-bottom:0.3rem; border-radius:4px;">
+                <span>${f.name} (${(f.size/1024).toFixed(2)} KB) ${f.error ? '<span style="color:red;">文件类型错误</span>' : ''}</span>
+                <button type="button" class="btn btn-danger btn-sm" onclick="removeFile(${index})">删除</button>
+            </li>`;
+        });
+        html += '</ul>';
+        fileListDiv.innerHTML = html;
+        batchUploadBtn.disabled = selectedFiles.some(f => f.error) || selectedFiles.length === 0;
     }
-});
+
+    window.removeFile = function(index) {
+        selectedFiles.splice(index, 1);
+        renderFileList();
+    };
+
+    addBtn.addEventListener('click', () => {
+        const files = Array.from(fileInput.files);
+        const allowed = ['doc','docx','pdf'];
+        files.forEach(file => {
+            const ext = file.name.split('.').pop().toLowerCase();
+            const error = !allowed.includes(ext);
+            selectedFiles.push({ file, name: file.name, size: file.size, error });
+        });
+        fileInput.value = '';
+        renderFileList();
+    });
+
+    batchUploadBtn.addEventListener('click', async () => {
+        if (selectedFiles.length === 0) return;
+        const validFiles = selectedFiles.filter(f => !f.error);
+        if (validFiles.length === 0) {
+            alert('没有可上传的有效文件（请检查文件类型）');
+            return;
+        }
+
+        const formData = new FormData();
+        validFiles.forEach(f => formData.append('files', f.file));
+        const parseMode = document.querySelector('input[name="parse_mode"]:checked').value;
+        const model = document.getElementById('modelSelect').value;
+        const ruleVersionId = document.getElementById('ruleVersionSelect').value;
+        formData.append('parse_mode', parseMode);
+        formData.append('model', model);
+        if (ruleVersionId) formData.append('rule_version_id', ruleVersionId);
+
+        batchUploadBtn.disabled = true;
+        batchLoading.style.display = 'block';
+
+        try {
+            const response = await fetch('/batch_upload', { method: 'POST', body: formData });
+            const result = await response.json();
+            if (result.status === 'success') {
+                let message = `✅ 成功提交 ${result.count} 个文件`;
+                if (result.failed && result.failed.length > 0) {
+                    message += `，但以下文件失败：\n`;
+                    result.failed.forEach(f => {
+                        message += `- ${f.name}: ${f.reason}\n`;
+                    });
+                } else {
+                    message += `，全部成功！`;
+                }
+                alert(message);
+                selectedFiles = [];
+                renderFileList();
+                window.location.href = '/results';
+            } else {
+                alert('❌ 上传失败：' + (result.error || '未知错误'));
+            }
+        } catch (err) {
+            alert('❌ 批量上传异常：' + err);
+        } finally {
+            batchUploadBtn.disabled = false;
+            batchLoading.style.display = 'none';
+        }
+    });
+
+    // ==================== 初始化 ====================
+    document.addEventListener('DOMContentLoaded', () => {
+        loadRuleVersions();
+        const ruleSelect = document.getElementById('ruleVersionSelect');
+        ruleSelect.addEventListener('change', saveSelectedVersion);
+        // 确保公共设置区的规则版本选择影响批量上传（已通过 formData 直接获取，无需额外同步）
+    });
 </script>
 {% endblock %}
