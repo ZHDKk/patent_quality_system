@@ -20,6 +20,13 @@ from deepdiff import DeepDiff
 main_bp = Blueprint('main', __name__)
 
 ALLOWED_EXTENSIONS = {'doc', 'docx', 'pdf'}
+AVAILABLE_MODELS = [  # 可用模型列表
+    ('kimi-k2.5', 'Kimi k2.5'),
+    ('kimi-k2-0905-preview', 'Kimi k2 0905 Preview'),
+    ('kimi-k2-turbo-preview', 'Kimi k2 Turbo Preview'),
+    ('kimi-k2-thinking', 'Kimi k2 Thinking'),
+    ('kimi-k2-thinking-turbo', 'Kimi k2 Thinking Turbo'),
+]
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -42,15 +49,13 @@ def upload():
                 return jsonify({'error': 'No selected file'}), 400
             if file and allowed_file(file.filename):
                 original_filename = file.filename
-                # 提取扩展名
                 ext = os.path.splitext(original_filename)[1].lower()
-                # 生成安全的存储文件名（忽略 secure_filename 对中文的破坏，直接使用 UUID）
                 safe_filename = str(uuid.uuid4()) + ext
                 file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], safe_filename)
                 file.save(file_path)
 
                 doc = PatentDocument(
-                    filename=original_filename,  # 保存原始文件名用于显示
+                    filename=original_filename,
                     original_path=file_path,
                     uploader_id=current_user.id
                 )
@@ -61,26 +66,31 @@ def upload():
                 parent_id = request.form.get('parent_result_id')
                 parse_mode = request.form.get('parse_mode', 'local')
                 rule_version_id = request.form.get('rule_version_id')
-                model = request.form.get('model')
+                user_selected_model = request.form.get('model')
+                text_only = request.form.get('text_only', 'no') == 'yes'  # 新增：纯文本模式标志
 
-                # 验证规则版本
+                # 确定使用的模型
                 if rule_version_id:
                     rule_version = RuleVersion.query.get(rule_version_id)
                     if not rule_version:
                         return jsonify({'error': '无效的规则版本'}), 400
-                    if not model or not current_user.has_permission('choose_model'):
+                    if current_user.has_permission('choose_model') and user_selected_model:
+                        model = user_selected_model
+                    else:
                         model = rule_version.model
                 else:
                     rule_version = RuleVersion.query.filter_by(is_active=True).order_by(RuleVersion.created_at.desc()).first()
                     if rule_version:
                         rule_version_id = rule_version.id
-                        if not model or not current_user.has_permission('choose_model'):
+                        if current_user.has_permission('choose_model') and user_selected_model:
+                            model = user_selected_model
+                        else:
                             model = rule_version.model
                     else:
-                        model = model or 'kimi-k2-turbo-preview'
+                        model = user_selected_model if (current_user.has_permission('choose_model') and user_selected_model) else 'kimi-k2-turbo-preview'
 
                 process_patent_document.delay(
-                    doc.id, is_recheck, parent_id, parse_mode, model, rule_version_id
+                    doc.id, is_recheck, parent_id, parse_mode, model, rule_version_id, text_only  # 传递 text_only
                 )
 
                 return jsonify({'status': 'success', 'doc_id': doc.id})
@@ -92,7 +102,7 @@ def upload():
             return jsonify({'error': f'服务器内部错误: {str(e)}'}), 500
 
     recent_docs = PatentDocument.query.filter_by(uploader_id=current_user.id).order_by(PatentDocument.upload_time.desc()).limit(10).all()
-    return render_template('upload.html', recent_docs=recent_docs)
+    return render_template('upload.html', recent_docs=recent_docs, available_models=AVAILABLE_MODELS)
 
 
 @main_bp.route('/batch_upload', methods=['POST'])
@@ -105,23 +115,28 @@ def batch_upload():
             return jsonify({'error': 'No files'}), 400
 
         parse_mode = request.form.get('parse_mode', 'local')
-        model = request.form.get('model')
+        user_selected_model = request.form.get('model')
         rule_version_id = request.form.get('rule_version_id')
+        text_only = request.form.get('text_only', 'no') == 'yes'  # 新增
 
         if rule_version_id:
             rule_version = RuleVersion.query.get(rule_version_id)
             if not rule_version:
                 return jsonify({'error': '无效的规则版本'}), 400
-            if not model or not current_user.has_permission('choose_model'):
+            if current_user.has_permission('choose_model') and user_selected_model:
+                model = user_selected_model
+            else:
                 model = rule_version.model
         else:
             rule_version = RuleVersion.query.filter_by(is_active=True).order_by(RuleVersion.created_at.desc()).first()
             if rule_version:
                 rule_version_id = rule_version.id
-                if not model or not current_user.has_permission('choose_model'):
+                if current_user.has_permission('choose_model') and user_selected_model:
+                    model = user_selected_model
+                else:
                     model = rule_version.model
             else:
-                model = model or 'kimi-k2-turbo-preview'
+                model = user_selected_model if (current_user.has_permission('choose_model') and user_selected_model) else 'kimi-k2-turbo-preview'
 
         doc_ids = []
         failed_files = []
@@ -154,7 +169,7 @@ def batch_upload():
         db.session.commit()
 
         for doc_id in doc_ids:
-            process_patent_document.delay(doc_id, False, None, parse_mode, model, rule_version_id)
+            process_patent_document.delay(doc_id, False, None, parse_mode, model, rule_version_id, text_only)
 
         return jsonify({
             'status': 'success',
@@ -175,10 +190,9 @@ def results():
     query = PatentDocument.query.filter_by(uploader_id=current_user.id).order_by(PatentDocument.upload_time.desc())
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     docs = pagination.items
-    # 为每个文档预加载最新结果（可选）
     for doc in docs:
         if doc.results:
-            doc.latest_result = doc.results[-1]  # 假设按版本升序，最后一个是最新
+            doc.latest_result = doc.results[-1]
         else:
             doc.latest_result = None
     return render_template('results.html', docs=docs, pagination=pagination)
@@ -204,13 +218,12 @@ def view_result(doc_id):
             'check_time': res.check_time.isoformat(),
             'result_json': result_content,
             'revised_doc_path': res.revised_doc_path,
-            'rule_name': res.rule_version.name if res.rule_version else ''  # 新增
+            'rule_name': res.rule_version.name if res.rule_version else ''
         })
 
-    # 判断是否需要显示返回特定用户列表的链接
     view_user = None
     if current_user.role == 'admin' and doc.uploader_id != current_user.id:
-        view_user = doc.uploader  # 假设文档模型中有 uploader 关系
+        view_user = doc.uploader
 
     return render_template('result_detail.html', doc=doc, results=results_data, view_user=view_user)
 
@@ -233,7 +246,6 @@ def compare():
 def api_compare(version1, version2):
     v1 = QualityCheckResult.query.get_or_404(version1)
     v2 = QualityCheckResult.query.get_or_404(version2)
-    # 权限检查
     if v1.document.uploader_id != current_user.id and current_user.role != 'admin':
         return jsonify({'error': 'Forbidden'}), 403
     if v2.document.uploader_id != current_user.id and current_user.role != 'admin':
@@ -262,10 +274,11 @@ def manage_rules():
             file.save(temp_path)
 
             description = request.form.get('description', '')
-            rule_name = request.form.get('rule_name', '')  # 获取规则名称
+            rule_name = request.form.get('rule_name', '')
+            model = request.form.get('model', 'kimi-k2-turbo-preview')  # 获取选择的模型
             engine = RuleEngine()
             try:
-                engine.update_rules(temp_path, description, current_user.id, rule_name)
+                engine.update_rules(temp_path, description, current_user.id, rule_name, model)
                 flash('规则已更新')
             except Exception as e:
                 flash(f'更新失败: {str(e)}')
@@ -274,7 +287,25 @@ def manage_rules():
             flash('请上传 .xlsx 文件')
 
     versions = RuleVersion.query.order_by(RuleVersion.created_at.desc()).all()
-    return render_template('manage_rules.html', versions=versions)
+    return render_template('manage_rules.html', versions=versions, available_models=AVAILABLE_MODELS)
+
+@main_bp.route('/admin/rules/update_model/<int:version_id>', methods=['POST'])
+@login_required
+@admin_required
+def update_rule_model(version_id):
+    """更新规则版本的模型"""
+    rule = RuleVersion.query.get_or_404(version_id)
+    data = request.get_json()
+    new_model = data.get('model')
+    if not new_model:
+        return jsonify({'error': '缺少 model 参数'}), 400
+    # 可选的模型校验
+    valid_models = [m[0] for m in AVAILABLE_MODELS]
+    if new_model not in valid_models:
+        return jsonify({'error': '无效的模型'}), 400
+    rule.model = new_model
+    db.session.commit()
+    return jsonify({'status': 'success'})
 
 @main_bp.route('/admin/users')
 @login_required
@@ -343,7 +374,6 @@ def batch_delete_documents():
         doc = PatentDocument.query.get(doc_id)
         if doc:
             try:
-                # 删除物理文件
                 if os.path.exists(doc.original_path):
                     os.remove(doc.original_path)
                 for result in doc.results:
@@ -380,35 +410,31 @@ def download_rule(version_id):
     with open(rule.rules_file_path, 'rb') as f:
         encrypted = f.read()
     decrypted = cipher.decrypt(encrypted)
-    # 返回解密后的文件作为附件下载
     response = make_response(decrypted)
     response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     response.headers['Content-Disposition'] = f'attachment; filename={rule.version}.xlsx'
     return response
 
-# 用户权限编辑页面
 @main_bp.route('/admin/user/<int:user_id>/edit', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def edit_user(user_id):
     user = User.query.get_or_404(user_id)
     if request.method == 'POST':
-        # 更新权限
         permissions = request.form.getlist('permissions')
         user.permissions = permissions
         db.session.commit()
         flash('用户权限更新成功')
         return redirect(url_for('main.manage_users'))
-    # GET 请求：显示编辑表单
     available_permissions = [
         {'id': 'upload', 'name': '上传文档'},
         {'id': 'view_results', 'name': '查看结果'},
         {'id': 'manage_rules', 'name': '管理规则'},
-        {'id': 'manage_users', 'name': '管理用户'}
+        {'id': 'manage_users', 'name': '管理用户'},
+        {'id': 'choose_model', 'name': '选择AI模型'}
     ]
     return render_template('edit_user.html', user=user, permissions=available_permissions)
 
-# 查看指定用户的结果
 @main_bp.route('/admin/user/<int:user_id>/results')
 @login_required
 @admin_required
@@ -419,10 +445,8 @@ def user_results(user_id):
     query = PatentDocument.query.filter_by(uploader_id=user.id).order_by(PatentDocument.upload_time.desc())
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     docs = pagination.items
-    # 使用同一个 results.html 模板，但传递额外的 user 参数用于显示标题
     return render_template('results.html', docs=docs, pagination=pagination, view_user=user)
 
-# 删除用户（可选）
 @main_bp.route('/api/user/<int:user_id>', methods=['DELETE'])
 @login_required
 @admin_required
@@ -434,11 +458,9 @@ def delete_user(user_id):
     db.session.commit()
     return jsonify({'status': 'success'})
 
-from .report_generator import generate_revised_document  # 导入修订版生成函数
+from .report_generator import generate_revised_document
 
-# 生成修订版文档
 def convert_doc_to_docx(doc_path):
-    """使用 LibreOffice 将 .doc 转换为 .docx，返回临时 .docx 文件路径"""
     with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp:
         output_path = tmp.name
     cmd = [
@@ -472,7 +494,6 @@ def generate_revised(result_id):
     if result.revised_doc_path and os.path.exists(result.revised_doc_path):
         return jsonify({'status': 'success', 'message': '已存在'})
 
-    # 确定要处理的文档路径
     original_path = doc.original_path
     ext = os.path.splitext(original_path)[1].lower()
     need_cleanup = False
@@ -502,7 +523,6 @@ def generate_revised(result_id):
         if need_cleanup and os.path.exists(original_path):
             os.unlink(original_path)
 
-# 下载修订版文档
 @main_bp.route('/download/revised/<int:result_id>')
 @login_required
 def download_revised(result_id):
@@ -516,31 +536,22 @@ def download_revised(result_id):
         return redirect(url_for('main.view_result', doc_id=doc.id))
     return send_file(result.revised_doc_path, as_attachment=True, download_name=f'report_{doc.filename}')
 
-
 @main_bp.route('/admin/rules/delete/<int:version_id>', methods=['POST'])
 @login_required
 @admin_required
 def delete_rule_version(version_id):
-    """
-    删除指定规则版本，同时检查：
-    - 至少保留一个规则版本
-    - 该版本未被任何质检结果引用
-    """
     rule = RuleVersion.query.get_or_404(version_id)
 
-    # 检查是否只剩一个版本
     count = RuleVersion.query.count()
     if count <= 1:
         flash('至少保留一个规则版本，无法删除', 'error')
         return redirect(url_for('main.manage_rules'))
 
-    # 检查是否有质检结果关联
     if QualityCheckResult.query.filter_by(rule_version_id=version_id).first():
         flash('该规则版本已被质检结果引用，无法删除', 'error')
         return redirect(url_for('main.manage_rules'))
 
     try:
-        # 删除加密的规则文件
         if os.path.exists(rule.rules_file_path):
             os.remove(rule.rules_file_path)
         db.session.delete(rule)
@@ -555,14 +566,14 @@ def delete_rule_version(version_id):
 @main_bp.route('/api/rule_versions')
 @login_required
 def api_rule_versions():
-    """获取所有规则版本，用于前端下拉框"""
     versions = RuleVersion.query.order_by(RuleVersion.created_at.desc()).all()
     data = [{
         'id': v.id,
         'version': v.version,
         'description': v.description,
         'created_at': v.created_at.isoformat(),
-        'is_active': v.is_active
+        'is_active': v.is_active,
+        'model': v.model
     } for v in versions]
     return jsonify(data)
 
@@ -570,7 +581,6 @@ def api_rule_versions():
 @login_required
 @admin_required
 def reset_password(user_id):
-    """管理员重置用户密码"""
     user = User.query.get_or_404(user_id)
     data = request.get_json()
     new_password = data.get('password')

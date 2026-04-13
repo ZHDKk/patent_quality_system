@@ -123,8 +123,8 @@ exit()
         # 如果 migrations 文件夹不存在，先初始化（确保数据库连接正常）
         flask db init
 
-        # 生成迁移脚本（如果模型有变化）
-        flask db migrate -m "add name to rule_name"
+        # 生成迁移脚本（如果模型有变化），比如增加model字段
+        flask db migrate -m "add model field to rule_versions"
 
         # 执行升级
         flask db upgrade

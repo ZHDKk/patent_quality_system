@@ -14,7 +14,6 @@ def login():
         user = User.query.filter_by(username=username).first()
         if user and check_password_hash(user.password_hash, password):
             login_user(user)
-            # 记录日志
             log = OperationLog(
                 user_id=user.id,
                 action='login',
@@ -37,7 +36,6 @@ def logout():
 @auth_bp.route('/register', methods=['GET', 'POST'])
 @login_required
 def register():
-    # 仅管理员可创建新用户
     if current_user.role != 'admin':
         flash('Access denied')
         return redirect(url_for('main.index'))
@@ -45,10 +43,9 @@ def register():
         username = request.form['username']
         password = request.form['password']
         role = request.form.get('role', 'employee')
-        # 获取权限列表（从表单的多选框获取）
-        permissions = request.form.getlist('permissions')  # 返回列表
+        permissions = request.form.getlist('permissions')
         if not permissions:
-            permissions = ['upload', 'view_results']  # 默认
+            permissions = ['upload', 'view_results']
         if User.query.filter_by(username=username).first():
             flash('Username already exists')
             return redirect(url_for('auth.register'))
@@ -62,11 +59,11 @@ def register():
         db.session.commit()
         flash('User created successfully')
         return redirect(url_for('main.manage_users'))
-    # 渲染注册页面，传递可用权限列表
     available_permissions = [
         {'id': 'upload', 'name': '上传文档'},
         {'id': 'view_results', 'name': '查看结果'},
         {'id': 'manage_rules', 'name': '管理规则'},
-        {'id': 'manage_users', 'name': '管理用户'}
+        {'id': 'manage_users', 'name': '管理用户'},
+        {'id': 'choose_model', 'name': '选择AI模型'}  # 新增权限
     ]
     return render_template('register.html', permissions=available_permissions)

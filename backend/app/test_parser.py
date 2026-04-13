@@ -96,8 +96,8 @@ def test_text_interface():
     KIMI_API_KEY = "sk-AZAyCMr4v499vZplgG9xR8xv0Llebp6XoVeT8LG8D6lJiWWo"
     RULE_FILE = "D:\\pro\\pro\\other_pro\\python\\patent_quality_system\\backend\\app\\rules_temp.xlsx"  # 如果加密则用 ".enc" 文件
     RULE_ENCRYPT_KEY = "YfPqwB4m6T6tt9n6Xoi1WfI25AJJPB5ZYiqXb4HrtmU="
-    PATENT_FILE = "D:\\pro\\pro\\other_pro\\python\\patent_quality_system\\uploads\\一种便于收纳的工具盒.doc"
-    MODEL = "kimi-k2-turbo-preview"
+    PATENT_FILE = "D:\\pro\\pro\\other_pro\\python\\patent_quality_system\\uploads\\一种可调节重复使用的防变形支撑工装-实用新型.docx"
+    MODEL = "kimi-k2.5"
 
     # 1. 加载规则
     print("加载规则文件...")
@@ -109,6 +109,7 @@ def test_text_interface():
     parser = DocumentParser()
     parsed = parser.parse(PATENT_FILE)
     doc_text = parsed.get('text', '')
+    images = parsed.get('images', [])
     print(f"文档解析完成，文本长度: {len(doc_text)} 字符")
     print(f"表格数量: {len(parsed.get('tables', []))}")
     print(f"图片数量: {len(parsed.get('images', []))}")
@@ -116,7 +117,7 @@ def test_text_interface():
     # 3. 调用 AI
     print("调用 Kimi 纯文本接口...")
     ai = KimiAIService(KIMI_API_KEY)
-    ai_result_text = ai.call_with_text(system_prompt, doc_text, model=MODEL)
+    ai_result_text = ai.call_multimodal(system_prompt, doc_text, model=MODEL, images=images)
 
     # 4. 输出结果
     try:

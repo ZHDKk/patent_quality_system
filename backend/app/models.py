@@ -10,7 +10,7 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
     role = db.Column(db.String(20), default='employee')  # admin, employee
-    # 存储权限列表，如 ["upload", "view_results", "manage_rules", "manage_users"]
+    # 存储权限列表，如 ["upload", "view_results", "manage_rules", "manage_users", "choose_model"]
     permissions = db.Column(db.JSON, default=['upload', 'view_results'])
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -58,17 +58,18 @@ class QualityCheckResult(db.Model):
     check_time = db.Column(db.DateTime, default=datetime.utcnow)
 
     parent = db.relationship('QualityCheckResult', remote_side=[id], backref='children')
-    rule_version = db.relationship('RuleVersion', backref='quality_check_results')  # 新增
+    rule_version = db.relationship('RuleVersion', backref='quality_check_results')
 
 class RuleVersion(db.Model):
     __tablename__ = 'rule_versions'
     id = db.Column(db.Integer, primary_key=True)
     version = db.Column(db.String(50), unique=True)
-    name = db.Column(db.String(100), nullable=False, default='')  # 新增：规则名称
+    name = db.Column(db.String(100), nullable=False, default='')
     description = db.Column(db.String(200))
     rules_file_path = db.Column(db.String(500))
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
+    model = db.Column(db.String(50), nullable=False, default='kimi-k2-turbo-preview')  # 新增模型字段
 
     creator = db.relationship('User', backref='rule_versions')

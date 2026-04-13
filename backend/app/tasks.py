@@ -19,8 +19,9 @@ celery.conf.update(
 
 @celery.task(bind=True, max_retries=3)
 def process_patent_document(self, doc_id, is_recheck=False, parent_result_id=None,
-                            parse_mode='local', model='kimi-k2-turbo-preview', rule_version_id=None):
-    """异步处理单个专利文档，支持指定规则版本"""
+                            parse_mode='local', model='kimi-k2-turbo-preview', rule_version_id=None,
+                            text_only=False):  # 新增参数
+    """异步处理单个专利文档，支持指定规则版本和模型，支持纯文本模式"""
     from . import create_app
     app = create_app()
     with app.app_context():
@@ -28,18 +29,16 @@ def process_patent_document(self, doc_id, is_recheck=False, parent_result_id=Non
         if not doc:
             return
 
-        # 确保状态为 processing
         if doc.status != 'processing':
             doc.status = 'processing'
             db.session.commit()
 
         try:
-            # 根据 rule_version_id 加载规则引擎
+            # 加载规则引擎
             if rule_version_id:
                 rule_engine = RuleEngine(version_id=rule_version_id)
             else:
-                rule_engine = RuleEngine()  # 加载最新激活版本
-
+                rule_engine = RuleEngine()
             rule_version_id = rule_engine.current_version_id
             if not rule_version_id:
                 raise Exception("未找到可用的规则版本")
@@ -51,15 +50,31 @@ def process_patent_document(self, doc_id, is_recheck=False, parent_result_id=Non
             ai_result = None
 
             if parse_mode == 'local':
-                # 本地解析模式
                 parser = DocumentParser()
                 parsed = parser.parse(doc.original_path)
                 doc.parsed_json = json.dumps(parsed)
                 db.session.commit()
+
                 doc_text = parsed.get('text', '')
+                tables_text = "\n".join(parsed.get('tables', []))
+                full_text = f"{doc_text}\n\n表格内容：\n{tables_text}" if tables_text else doc_text
+                images = parsed.get('images', [])
 
                 system_prompt = rule_engine.get_system_prompt()
-                ai_result_text = ai.call_with_text(system_prompt, doc_text, model=model)
+
+                # 判断是否使用多模态：模型为k2.5系列、有图片、且未启用纯文本模式
+                use_multimodal = (("k2.5" in model or model == "kimi-k2.5") and images and not text_only)
+
+                if use_multimodal:
+                    multimodal_prompt = f"{system_prompt}\n\n文档文本内容如下：\n{full_text}\n\n请结合文档中的图片进行质检。"
+                    ai_result_text = ai.call_multimodal(
+                        system_prompt=system_prompt,
+                        text_content=multimodal_prompt,
+                        images=images,
+                        model=model
+                    )
+                else:
+                    ai_result_text = ai.call_with_text(system_prompt, full_text, model=model)
 
                 try:
                     issues = json.loads(ai_result_text)
@@ -69,10 +84,7 @@ def process_patent_document(self, doc_id, is_recheck=False, parent_result_id=Non
                 except json.JSONDecodeError:
                     ai_result = {'issues': [], 'raw_output': ai_result_text}
 
-                report_text = doc_text
-
             else:  # online 模式
-                # 解密规则文件
                 key = os.environ.get('RULE_ENCRYPT_KEY')
                 cipher = Fernet(key.encode() if isinstance(key, str) else key)
                 with open(rule_version.rules_file_path, 'rb') as f:
@@ -102,21 +114,19 @@ def process_patent_document(self, doc_id, is_recheck=False, parent_result_id=Non
             if ai_result is None:
                 raise Exception("AI result not set")
 
-            # 确定版本号
             version = 1
             if is_recheck and parent_result_id:
                 parent = QualityCheckResult.query.get(parent_result_id)
                 if parent:
                     version = parent.version + 1
 
-            # 保存质检结果（此时 revised_doc_path 为 None，等待用户手动生成）
             result = QualityCheckResult(
                 document_id=doc_id,
                 version=version,
                 parent_result_id=parent_result_id if is_recheck else None,
                 rule_version_id=rule_version_id,
                 result_json=json.dumps(ai_result),
-                revised_doc_path=None,  # 初始为 None
+                revised_doc_path=None,
                 check_time=datetime.utcnow()
             )
             db.session.add(result)

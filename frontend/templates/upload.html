@@ -2,9 +2,7 @@
 {% block content %}
 <h2>上传专利文件</h2>
 
-<!-- ==================== 公共设置区 ==================== -->
 <div class="common-settings" style="margin-bottom: 2rem; padding: 1rem; background: rgba(15, 25, 45, 0.6); border-radius: 12px; border: 1px solid var(--border-color);">
-    <!-- 文档解析方式放在最上面 -->
     <div class="form-group">
         <label>文档解析方式：</label>
         <div style="display: flex; gap: 1.5rem; margin-top: 0.5rem;">
@@ -13,15 +11,21 @@
         </div>
     </div>
 
-    <!-- AI模型选择和选择质检规则库放在同一行 -->
     <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+        {% if current_user.has_permission('choose_model') %}
         <div class="form-group" style="flex: 1;">
             <label>AI模型选择：</label>
             <select name="model" id="modelSelect" class="form-control">
-                <option value="kimi-k2-turbo-preview" selected>Kimi (k2-turbo-preview)</option>
-                <option value="moonshot-v1-8k" disabled>Moonshot v1 8K (即将支持)</option>
+                {% for value, label in available_models %}
+                    <option value="{{ value }}" {% if value == 'kimi-k2-turbo-preview' %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
             </select>
         </div>
+        {% else %}
+        <div class="form-group" style="flex: 1; display: none;">
+            <input type="hidden" name="model" id="modelSelectHidden" value="">
+        </div>
+        {% endif %}
         <div class="form-group" style="flex: 1;">
             <label>选择质检规则库：</label>
             <select id="ruleVersionSelect" class="form-control">
@@ -29,15 +33,22 @@
             </select>
         </div>
     </div>
+
+    <!-- 新增：纯文本模式复选框 -->
+    <div class="form-group" style="margin-top: 1rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem;">
+            <input type="checkbox" name="text_only" id="textOnlyCheckbox" value="yes">
+            <span>纯文本模式（不发送图片，仅使用文档中的文本内容进行质检）</span>
+        </label>
+    </div>
 </div>
 
-<!-- ==================== Tab 导航 ==================== -->
+<!-- Tab 导航 -->
 <div class="tab-navigation" style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color);">
     <button id="tabSingleBtn" class="tab-btn active" data-tab="single">单个上传</button>
     <button id="tabBatchBtn" class="tab-btn" data-tab="batch">批量上传</button>
 </div>
 
-<!-- ==================== Tab 内容区 ==================== -->
 <div id="singleUploadPanel" class="tab-panel active">
     <form id="uploadForm" enctype="multipart/form-data">
         <div class="form-group">
@@ -82,7 +93,6 @@
 </div>
 
 <style>
-    /* Tab 样式 */
     .tab-btn {
         background: none;
         border: none;
@@ -138,10 +148,9 @@
 </style>
 
 <script>
-    // ==================== 公共变量 ====================
-    let selectedFiles = []; // 批量上传文件列表
+    const hasChooseModel = {{ 'true' if current_user.has_permission('choose_model') else 'false' }};
+    let selectedFiles = [];
 
-    // ==================== Tab 切换 ====================
     const tabSingleBtn = document.getElementById('tabSingleBtn');
     const tabBatchBtn = document.getElementById('tabBatchBtn');
     const singlePanel = document.getElementById('singleUploadPanel');
@@ -164,7 +173,6 @@
     tabSingleBtn.addEventListener('click', () => switchTab('single'));
     tabBatchBtn.addEventListener('click', () => switchTab('batch'));
 
-    // ==================== 规则版本加载 ====================
     async function loadRuleVersions() {
         try {
             const response = await fetch('/api/rule_versions');
@@ -174,14 +182,26 @@
             versions.forEach(v => {
                 const option = document.createElement('option');
                 option.value = v.id;
-                option.textContent = `${v.version} - ${v.description || '无描述'} (${new Date(v.created_at).toLocaleString()})${v.is_active ? '' : ''}`;
+                option.textContent = `${v.version} - ${v.description || '无描述'} (${new Date(v.created_at).toLocaleString()})`;
+                option.dataset.model = v.model;
                 select.appendChild(option);
             });
-            // 恢复上次选择
             const savedVersionId = localStorage.getItem('selectedRuleVersionId');
             if (savedVersionId) select.value = savedVersionId;
+            updateModelFromRuleVersion();
         } catch (err) {
             console.error('加载规则版本失败:', err);
+        }
+    }
+
+    function updateModelFromRuleVersion() {
+        if (hasChooseModel) return;
+        const select = document.getElementById('ruleVersionSelect');
+        const selectedOption = select.options[select.selectedIndex];
+        if (selectedOption && selectedOption.dataset.model) {
+            document.getElementById('modelSelectHidden').value = selectedOption.dataset.model;
+        } else {
+            document.getElementById('modelSelectHidden').value = 'kimi-k2-turbo-preview';
         }
     }
 
@@ -190,9 +210,9 @@
         const val = select.value;
         if (val) localStorage.setItem('selectedRuleVersionId', val);
         else localStorage.removeItem('selectedRuleVersionId');
+        updateModelFromRuleVersion();
     }
 
-    // ==================== 单文件上传 ====================
     document.querySelectorAll('input[name="is_recheck"]').forEach(radio => {
         radio.addEventListener('change', function() {
             document.getElementById('recheckOptions').style.display = this.value === 'yes' ? 'block' : 'none';
@@ -206,12 +226,19 @@
         btn.disabled = true;
         loading.style.display = 'block';
         const formData = new FormData(e.target);
-        // 从公共设置获取解析方式、模型、规则版本
         const parseMode = document.querySelector('input[name="parse_mode"]:checked').value;
-        const model = document.getElementById('modelSelect').value;
+        let model;
+        if (hasChooseModel) {
+            model = document.getElementById('modelSelect').value;
+        } else {
+            model = document.getElementById('modelSelectHidden').value;
+        }
         const ruleVersionId = document.getElementById('ruleVersionSelect').value;
+        // 获取纯文本模式复选框状态
+        const textOnly = document.getElementById('textOnlyCheckbox').checked ? 'yes' : 'no';
         formData.set('parse_mode', parseMode);
         formData.set('model', model);
+        formData.set('text_only', textOnly);  // 新增
         if (ruleVersionId) formData.set('rule_version_id', ruleVersionId);
         else formData.delete('rule_version_id');
         try {
@@ -231,7 +258,6 @@
         }
     });
 
-    // ==================== 批量上传 ====================
     const fileInput = document.getElementById('batchFileInput');
     const addBtn = document.getElementById('addFilesBtn');
     const fileListDiv = document.getElementById('fileList');
@@ -284,10 +310,17 @@
         const formData = new FormData();
         validFiles.forEach(f => formData.append('files', f.file));
         const parseMode = document.querySelector('input[name="parse_mode"]:checked').value;
-        const model = document.getElementById('modelSelect').value;
+        let model;
+        if (hasChooseModel) {
+            model = document.getElementById('modelSelect').value;
+        } else {
+            model = document.getElementById('modelSelectHidden').value;
+        }
         const ruleVersionId = document.getElementById('ruleVersionSelect').value;
+        const textOnly = document.getElementById('textOnlyCheckbox').checked ? 'yes' : 'no';
         formData.append('parse_mode', parseMode);
         formData.append('model', model);
+        formData.append('text_only', textOnly);
         if (ruleVersionId) formData.append('rule_version_id', ruleVersionId);
 
         batchUploadBtn.disabled = true;
@@ -321,12 +354,10 @@
         }
     });
 
-    // ==================== 初始化 ====================
     document.addEventListener('DOMContentLoaded', () => {
         loadRuleVersions();
         const ruleSelect = document.getElementById('ruleVersionSelect');
         ruleSelect.addEventListener('change', saveSelectedVersion);
-        // 确保公共设置区的规则版本选择影响批量上传（已通过 formData 直接获取，无需额外同步）
     });
 </script>
 {% endblock %}

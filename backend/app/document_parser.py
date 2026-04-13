@@ -130,10 +130,10 @@ class DocumentParser:
         return [f.result() for f in futures]
 
     def _extract_content(self, docling_result) -> dict:
-        """从 Docling 结果中提取核心内容（复用之前兼容性代码）"""
+        """从 Docling 结果中提取文本、表格和图片（base64）"""
         doc = docling_result.document
 
-        # 提取文本（兼容多种获取方式）
+        # 提取文本
         try:
             text = doc.text
         except AttributeError:
@@ -156,8 +156,43 @@ class DocumentParser:
                 except AttributeError:
                     tables.append(str(table))
 
-        # 提取图片信息（仅记录数量）
-        images = [f"image_{i}" for i, _ in enumerate(doc.pictures)]
+        # 提取图片信息（base64 数据）
+        images = []
+        for idx, picture in enumerate(doc.pictures):
+            try:
+                # 从 picture.image.uri 获取 data URL
+                if hasattr(picture, 'image') and hasattr(picture.image, 'uri'):
+                    uri = str(picture.image.uri)
+                    if uri.startswith('data:image/'):
+                        # 提取 base64 部分（逗号之后）
+                        base64_part = uri.split(',', 1)[-1]
+                        mime_part = uri.split(';')[0].replace('data:', '')
+                        images.append({
+                            'index': idx,
+                            'mime_type': mime_part,
+                            'base64': base64_part,
+                            'data_url': uri  # 保留完整 URL 以便直接使用
+                        })
+                        continue
+            except Exception as e:
+                logger.warning(f"Failed to extract picture {idx}: {e}")
+
+            # 备用方案：尝试从其他属性获取
+            try:
+                if hasattr(picture, 'get_data'):
+                    img_data = picture.get_data()
+                    import base64
+                    b64 = base64.b64encode(img_data).decode('utf-8')
+                    images.append({
+                        'index': idx,
+                        'mime_type': 'image/png',  # 默认
+                        'base64': b64,
+                        'data_url': f"data:image/png;base64,{b64}"
+                    })
+                else:
+                    logger.warning(f"Picture {idx} has no accessible data")
+            except Exception as e:
+                logger.warning(f"Picture {idx} extraction failed: {e}")
 
         # 保留 Docling 原始输出（确保可 JSON 序列化）
         try:
@@ -171,7 +206,7 @@ class DocumentParser:
         return {
             "text": text,
             "tables": tables,
-            "images": images,
+            "images": images,                # 新增：图片 base64 列表
             "docling_output": docling_output
         }
 
