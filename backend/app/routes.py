@@ -34,122 +34,138 @@ def index():
 @log_operation('upload')
 def upload():
     if request.method == 'POST':
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file part'}), 400
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({'error': 'No selected file'}), 400
-        if file and allowed_file(file.filename):
-            original_filename = file.filename
-            # 生成安全的存储文件名
-            safe_filename = secure_filename(original_filename)
-            if not safe_filename:
-                ext = os.path.splitext(original_filename)[1]
+        try:
+            if 'file' not in request.files:
+                return jsonify({'error': 'No file part'}), 400
+            file = request.files['file']
+            if file.filename == '':
+                return jsonify({'error': 'No selected file'}), 400
+            if file and allowed_file(file.filename):
+                original_filename = file.filename
+                # 提取扩展名
+                ext = os.path.splitext(original_filename)[1].lower()
+                # 生成安全的存储文件名（忽略 secure_filename 对中文的破坏，直接使用 UUID）
                 safe_filename = str(uuid.uuid4()) + ext
-            file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], safe_filename)
-            file.save(file_path)
+                file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], safe_filename)
+                file.save(file_path)
 
-            doc = PatentDocument(
-                filename=original_filename,  # 保存原始文件名用于显示
-                original_path=file_path,
-                uploader_id=current_user.id
-            )
-            db.session.add(doc)
-            db.session.commit()
+                doc = PatentDocument(
+                    filename=original_filename,  # 保存原始文件名用于显示
+                    original_path=file_path,
+                    uploader_id=current_user.id
+                )
+                db.session.add(doc)
+                db.session.commit()
 
-            is_recheck = request.form.get('is_recheck') == 'yes'
-            parent_id = request.form.get('parent_result_id')
-            parse_mode = request.form.get('parse_mode', 'local')
-            model = request.form.get('model', 'kimi-k2-turbo-preview')
+                is_recheck = request.form.get('is_recheck') == 'yes'
+                parent_id = request.form.get('parent_result_id')
+                parse_mode = request.form.get('parse_mode', 'local')
+                rule_version_id = request.form.get('rule_version_id')
+                model = request.form.get('model')
 
-            # 获取用户选择的规则版本ID
-            rule_version_id = request.form.get('rule_version_id')
-            if rule_version_id:
-                # 验证版本是否存在
-                rule_version = RuleVersion.query.get(rule_version_id)
-                if not rule_version:
-                    return jsonify({'error': '无效的规则版本'}), 400
+                # 验证规则版本
+                if rule_version_id:
+                    rule_version = RuleVersion.query.get(rule_version_id)
+                    if not rule_version:
+                        return jsonify({'error': '无效的规则版本'}), 400
+                    if not model or not current_user.has_permission('choose_model'):
+                        model = rule_version.model
+                else:
+                    rule_version = RuleVersion.query.filter_by(is_active=True).order_by(RuleVersion.created_at.desc()).first()
+                    if rule_version:
+                        rule_version_id = rule_version.id
+                        if not model or not current_user.has_permission('choose_model'):
+                            model = rule_version.model
+                    else:
+                        model = model or 'kimi-k2-turbo-preview'
+
+                process_patent_document.delay(
+                    doc.id, is_recheck, parent_id, parse_mode, model, rule_version_id
+                )
+
+                return jsonify({'status': 'success', 'doc_id': doc.id})
             else:
-                rule_version_id = None  # 使用最新激活版本
-
-            process_patent_document.delay(doc.id, is_recheck, parent_id, parse_mode, model, rule_version_id)
-
-            return jsonify({'status': 'success', 'doc_id': doc.id})
-        else:
-            return jsonify({'error': 'File type not allowed'}), 400
+                return jsonify({'error': 'File type not allowed'}), 400
+        except Exception as e:
+            current_app.logger.error(f"Upload error for user {current_user.id}: {e}", exc_info=True)
+            db.session.rollback()
+            return jsonify({'error': f'服务器内部错误: {str(e)}'}), 500
 
     recent_docs = PatentDocument.query.filter_by(uploader_id=current_user.id).order_by(PatentDocument.upload_time.desc()).limit(10).all()
     return render_template('upload.html', recent_docs=recent_docs)
+
 
 @main_bp.route('/batch_upload', methods=['POST'])
 @login_required
 @log_operation('batch_upload')
 def batch_upload():
-    files = request.files.getlist('files')
-    print(f"【调试】收到文件数量: {len(files)}")
-    for i, f in enumerate(files):
-        print(f"  文件 {i}: {f.filename}")
-    if not files:
-        return jsonify({'error': 'No files'}), 400
+    try:
+        files = request.files.getlist('files')
+        if not files:
+            return jsonify({'error': 'No files'}), 400
 
-    parse_mode = request.form.get('parse_mode', 'local')
-    model = request.form.get('model', 'kimi-k2-turbo-preview')
+        parse_mode = request.form.get('parse_mode', 'local')
+        model = request.form.get('model')
+        rule_version_id = request.form.get('rule_version_id')
 
-    doc_ids = []
-    failed_files = []  # 记录失败的文件名及原因
+        if rule_version_id:
+            rule_version = RuleVersion.query.get(rule_version_id)
+            if not rule_version:
+                return jsonify({'error': '无效的规则版本'}), 400
+            if not model or not current_user.has_permission('choose_model'):
+                model = rule_version.model
+        else:
+            rule_version = RuleVersion.query.filter_by(is_active=True).order_by(RuleVersion.created_at.desc()).first()
+            if rule_version:
+                rule_version_id = rule_version.id
+                if not model or not current_user.has_permission('choose_model'):
+                    model = rule_version.model
+            else:
+                model = model or 'kimi-k2-turbo-preview'
 
-    for file in files:
-        if not file or not allowed_file(file.filename):
-            failed_files.append({'name': file.filename, 'reason': '文件类型不允许'})
-            continue
+        doc_ids = []
+        failed_files = []
 
-        original_filename = file.filename
-        safe_filename = secure_filename(original_filename)
-        if not safe_filename:
-            ext = os.path.splitext(original_filename)[1]
+        for file in files:
+            if not file or not allowed_file(file.filename):
+                failed_files.append({'name': file.filename, 'reason': '文件类型不允许'})
+                continue
+
+            original_filename = file.filename
+            ext = os.path.splitext(original_filename)[1].lower()
             safe_filename = str(uuid.uuid4()) + ext
+            file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], safe_filename)
 
-        file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], safe_filename)
+            try:
+                file.save(file_path)
+            except Exception as e:
+                failed_files.append({'name': original_filename, 'reason': f'保存失败: {str(e)}'})
+                continue
 
-        try:
-            file.save(file_path)
-        except Exception as e:
-            failed_files.append({'name': original_filename, 'reason': f'保存失败: {str(e)}'})
-            continue
+            doc = PatentDocument(
+                filename=original_filename,
+                original_path=file_path,
+                uploader_id=current_user.id
+            )
+            db.session.add(doc)
+            db.session.flush()
+            doc_ids.append(doc.id)
 
-        doc = PatentDocument(
-            filename=original_filename,
-            original_path=file_path,
-            uploader_id=current_user.id
-        )
-        db.session.add(doc)
-        db.session.flush()
-        doc_ids.append(doc.id)
+        db.session.commit()
 
-    db.session.commit()
+        for doc_id in doc_ids:
+            process_patent_document.delay(doc_id, False, None, parse_mode, model, rule_version_id)
 
-    parse_mode = request.form.get('parse_mode', 'local')
-    model = request.form.get('model', 'kimi-k2-turbo-preview')
-    rule_version_id = request.form.get('rule_version_id')  # 获取
-
-    # 验证规则版本
-    if rule_version_id:
-        rule_version = RuleVersion.query.get(rule_version_id)
-        if not rule_version:
-            return jsonify({'error': '无效的规则版本'}), 400
-    else:
-        rule_version_id = None
-
-    # 触发 Celery 任务
-    for doc_id in doc_ids:
-        process_patent_document.delay(doc_id, parse_mode=parse_mode, model=model, rule_version_id=rule_version_id)
-
-    return jsonify({
-        'status': 'success',
-        'doc_ids': doc_ids,
-        'count': len(doc_ids),
-        'failed': failed_files   # 返回失败文件列表
-    })
+        return jsonify({
+            'status': 'success',
+            'doc_ids': doc_ids,
+            'count': len(doc_ids),
+            'failed': failed_files
+        })
+    except Exception as e:
+        current_app.logger.error(f"Batch upload error for user {current_user.id}: {e}", exc_info=True)
+        db.session.rollback()
+        return jsonify({'error': f'服务器内部错误: {str(e)}'}), 500
 
 @main_bp.route('/results')
 @login_required

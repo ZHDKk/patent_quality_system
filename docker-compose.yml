@@ -1,17 +1,19 @@
 services:
   mysql:
     image: mysql:latest
-#    command: --innodb_force_recovery=1
+    #    command: --innodb_force_recovery=1
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
       MYSQL_DATABASE: patent_quality
       TZ: Asia/Shanghai
     volumes:
       - mysql-data:/var/lib/mysql
+      - /etc/localtime:/etc/localtime:ro      # 挂载宿主机时区文件
+      - /etc/timezone:/etc/timezone:ro         # 挂载宿主机时区配置
     networks:
       - patent-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
       timeout: 10s
       retries: 5
 
@@ -20,20 +22,20 @@ services:
     networks:
       - patent-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       timeout: 10s
       retries: 5
 
-#  dedoc:
-#    image: dedocproject/dedoc
-#    networks:
-#      - patent-network
-#    volumes:
-#      - dedoc-temp:/tmp
-#    healthcheck:
-#      test: ["CMD", "curl", "-f", "http://localhost:1231/"]
-#      timeout: 10s
-#      retries: 5
+  #  dedoc:
+  #    image: dedocproject/dedoc
+  #    networks:
+  #      - patent-network
+  #    volumes:
+  #      - dedoc-temp:/tmp
+  #    healthcheck:
+  #      test: ["CMD", "curl", "-f", "http://localhost:1231/"]
+  #      timeout: 10s
+  #      retries: 5
 
   backend:
     build:
@@ -52,6 +54,8 @@ services:
       - UPLOAD_FOLDER=/app/uploads
       - RULES_FOLDER=/app/rules
       - REPORTS_FOLDER=/app/reports
+      - HF_HOME=/models
+      - HF_ENDPOINT=https://hf-mirror.com   # 可选，避免偶然联网
     volumes:
       - ./uploads:/app/uploads
       - ./reports:/app/reports
@@ -59,13 +63,14 @@ services:
       - ./frontend:/app/frontend  # 开发环境挂载卷
       - ./docling_cache:/root/.cache/docling
       - ./revised:/app/revised
+      - ./docling_models:/models
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
-#      dedoc:
-#        condition: service_healthy
+    #      dedoc:
+    #        condition: service_healthy
     networks:
       - patent-network
 
@@ -85,19 +90,22 @@ services:
       - UPLOAD_FOLDER=/app/uploads
       - RULES_FOLDER=/app/rules
       - REPORTS_FOLDER=/app/reports
+      - HF_HOME=/models
+      - HF_ENDPOINT=https://hf-mirror.com
     volumes:
       - ./uploads:/app/uploads
       - ./reports:/app/reports
       - ./rules:/app/rules
       - ./frontend:/app/frontend
       - ./docling_cache:/root/.cache/docling
+      - ./docling_models:/models
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
-#      dedoc:
-#        condition: service_healthy
+    #      dedoc:
+    #        condition: service_healthy
     networks:
       - patent-network
 
@@ -112,6 +120,28 @@ services:
       - backend
     networks:
       - patent-network
+
+  model-downloader:
+    image: python:3.14.3
+    environment:
+      - HF_ENDPOINT=https://hf-mirror.com
+      - HF_HOME=/models
+      - HF_HUB_ENABLE_HF_TRANSFER=1
+      - PIP_ROOT_USER_ACTION=ignore
+    volumes:
+      - ./docling_models:/models
+    command: >
+      sh -c "
+      pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple &&
+      pip install --no-cache-dir huggingface_hub &&
+      python -c '
+      from huggingface_hub import snapshot_download;
+      snapshot_download(repo_id=\"ds4sd/docling-models\", local_dir=\"/models/models--ds4sd--docling-models\");
+      print(\"✅ Model downloaded successfully.\")
+      '
+      "
+    profiles:
+      - setup
 
 volumes:
   mysql-data:

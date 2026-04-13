@@ -37,6 +37,7 @@ def create_app(config_object=None):
 
     # 加载配置
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
+    # app.config['DEBUG'] = True
     # 如果环境变量 DB_HOST 不存在，则使用 SQLite
     if os.environ.get('DB_HOST'):
         app.config[

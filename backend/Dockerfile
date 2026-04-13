@@ -11,7 +11,12 @@ RUN apt-get update && apt-get install -y \
     libreoffice \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制依赖文件并安装
+# 设置 pip 使用清华镜像源
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 或者使用阿里云镜像
+# RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

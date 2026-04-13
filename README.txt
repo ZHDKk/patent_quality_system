@@ -29,6 +29,7 @@
 9、docker 常用指令：
 检查所有容器的运行状态：docker-compose ps
 停止并移除旧容器，避免冲突：docker-compose down
+先执行一次docling模型下载：docker-compose run --rm model-downloader
 会强制重新构建镜像，应用新的基础镜像：docker-compose up -d --build
 启动所有容器：docker-compose up -d
 只启动某一个容器：docker-compose up -d mysql
@@ -67,6 +68,13 @@ db.session.commit()
 
 # 退出
 exit()
+
+重新创建表：
+进入 Flask shell 重建表：docker-compose exec backend flask shell
+在 shell 中执行：
+from app import db
+db.drop_all()
+db.create_all()
 
 10.2.修改数据库字段类型:
 进入终端输入:

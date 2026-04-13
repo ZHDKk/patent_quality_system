@@ -96,7 +96,7 @@ def test_text_interface():
     KIMI_API_KEY = "sk-AZAyCMr4v499vZplgG9xR8xv0Llebp6XoVeT8LG8D6lJiWWo"
     RULE_FILE = "D:\\pro\\pro\\other_pro\\python\\patent_quality_system\\backend\\app\\rules_temp.xlsx"  # 如果加密则用 ".enc" 文件
     RULE_ENCRYPT_KEY = "YfPqwB4m6T6tt9n6Xoi1WfI25AJJPB5ZYiqXb4HrtmU="
-    PATENT_FILE = "D:\\pro\\pro\\other_pro\\python\\patent_quality_system\\zhuanli.docx"
+    PATENT_FILE = "D:\\pro\\pro\\other_pro\\python\\patent_quality_system\\uploads\\一种便于收纳的工具盒.doc"
     MODEL = "kimi-k2-turbo-preview"
 
     # 1. 加载规则
@@ -139,7 +139,7 @@ def test_file_interface():
     KIMI_API_KEY = "sk-AZAyCMr4v499vZplgG9xR8xv0Llebp6XoVeT8LG8D6lJiWWo"
     RULE_FILE = "D:\\pro\\pro\\other_pro\\python\\patent_quality_system\\backend\\app\\rules_temp.xlsx"  # 如果加密则用 ".enc" 文件
     RULE_ENCRYPT_KEY = "YfPqwB4m6T6tt9n6Xoi1WfI25AJJPB5ZYiqXb4HrtmU="
-    PATENT_FILE = "D:\\pro\\pro\\other_pro\\python\\patent_quality_system\\zhuanli.docx"
+    PATENT_FILE = "D:\\pro\\pro\\other_pro\\python\\patent_quality_system\\111.docx"
     MODEL = "kimi-k2-turbo-preview"
 
     # 如果规则文件是加密的，先解密为临时文件
