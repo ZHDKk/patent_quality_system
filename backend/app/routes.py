@@ -22,6 +22,7 @@ main_bp = Blueprint('main', __name__)
 ALLOWED_EXTENSIONS = {'doc', 'docx', 'pdf'}
 AVAILABLE_MODELS = [  # 可用模型列表
     ('kimi-k2.5', 'Kimi k2.5'),
+    ('kimi-k2.6', 'Kimi k2.6'),
     ('kimi-k2-0905-preview', 'Kimi k2 0905 Preview'),
     ('kimi-k2-turbo-preview', 'Kimi k2 Turbo Preview'),
     ('kimi-k2-thinking', 'Kimi k2 Thinking'),

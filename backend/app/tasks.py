@@ -62,8 +62,12 @@ def process_patent_document(self, doc_id, is_recheck=False, parent_result_id=Non
 
                 system_prompt = rule_engine.get_system_prompt()
 
-                # 判断是否使用多模态：模型为k2.5系列、有图片、且未启用纯文本模式
-                use_multimodal = (("k2.5" in model or model == "kimi-k2.5") and images and not text_only)
+                # 判断是否使用多模态
+                use_multimodal = (
+                        ("k2.5" in model or "k2.6" in model or model in ("kimi-k2.5", "kimi-k2.6"))
+                        and images
+                        and not text_only
+                )
 
                 if use_multimodal:
                     multimodal_prompt = f"{system_prompt}\n\n文档文本内容如下：\n{full_text}\n\n请结合文档中的图片进行质检。"

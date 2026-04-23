@@ -22,8 +22,9 @@ class KimiAIService:
 
     def _get_temperature(self, model):
         """根据模型返回合适的 temperature 值"""
-        if "k2.5" in model or model == "kimi-k2.5":
-            return 1
+        # k2.5 和 k2.6 要求 temperature 为 1
+        if "k2.5" in model or "k2.6" in model or model in ("kimi-k2.5", "kimi-k2.6"):
+            return 1.0
         else:
             return 0.1
 
